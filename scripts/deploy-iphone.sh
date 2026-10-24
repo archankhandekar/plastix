@@ -225,17 +225,36 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   warn "This is not macOS. Run this wizard on a Mac."
   exit 1
 fi
-if ! xcode-select -p >/dev/null 2>&1 || ! xcodebuild -version >/dev/null 2>&1; then
-  open_url "https://apps.apple.com/app/xcode/id497799835"
-  step "Install Xcode from the App Store, open it once, and accept the license."
-  step "Then run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
-  pause "Press Enter when Xcode is installed."
-fi
+# Loop until xcodebuild works: Xcode installed AND selected as the developer directory.
+while ! xcodebuild -version >/dev/null 2>&1; do
+  XCODE_APP=""
+  for candidate in /Applications/Xcode.app /Applications/Xcode-*.app; do
+    [[ -d "$candidate" ]] && { XCODE_APP="$candidate"; break; }
+  done
+  if [[ -n "$XCODE_APP" ]]; then
+    say "Found $XCODE_APP, but the active developer directory is:"
+    note "  $(xcode-select -p 2>/dev/null || echo unknown)"
+    if confirm "Point xcode-select at $XCODE_APP now? (asks for your Mac password)"; then
+      sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+      say "Accepting the Xcode license and finishing first-launch setup."
+      sudo xcodebuild -license accept || true
+      sudo xcodebuild -runFirstLaunch || true
+    else
+      pause "Run it yourself, then press Enter to check again."
+    fi
+  else
+    warn "Xcode is not installed (only the Command Line Tools are)."
+    open_url "https://apps.apple.com/app/xcode/id497799835"
+    step "Install Xcode from the App Store. It is a large download; wait until it finishes."
+    step "Open Xcode once and accept the license, then come back here."
+    pause "Press Enter when Xcode is installed."
+  fi
+done
 xcodebuild -version | head -n1
 XCODE_MAJOR=$(xcodebuild -version | head -n1 | awk '{print $2}' | cut -d. -f1)
 if [[ "${XCODE_MAJOR:-0}" -lt 16 ]]; then
   warn "Xcode 16 or later is required (found major version ${XCODE_MAJOR:-unknown})."
-  pause "Update Xcode, then press Enter."
+  pause "Update Xcode from the App Store, then press Enter."
 fi
 step "In Xcode, open Settings > Accounts and sign in with the Apple ID of your developer team."
 note "Automatic signing needs that account in Xcode, even when building from the terminal."
