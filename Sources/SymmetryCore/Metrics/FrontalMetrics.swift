@@ -107,7 +107,27 @@ public enum FrontalMetricsCalculator {
     }
 }
 
-/// Placeholder until Task 4 adds raster Dice. Returns nil (not measured).
-enum ContourOverlap {
-    static func compute(normalized set: LandmarkSet) -> Measurement? { nil }
+/// Mirrored contour overlap in the normalized midline frame.
+public enum ContourOverlap {
+    /// Minimum points per contour before overlap is reported.
+    public static let minimumPoints = 8
+    public static let gridSize = 256
+
+    /// Dice overlap of the patient-left contour with the patient-right contour mirrored
+    /// across the midline (x = 0 in the normalized frame). Nil when either contour has
+    /// fewer than `minimumPoints`.
+    public static func compute(normalized set: LandmarkSet) -> Measurement? {
+        guard set.leftContour.count >= minimumPoints, set.rightContour.count >= minimumPoints else { return nil }
+        let left = set.leftContour
+        let mirroredRight = set.rightContour.map { $0.mirroredX(about: 0) }
+        let all = left + mirroredRight
+        let minX = all.map(\.x).min()!, maxX = all.map(\.x).max()!
+        let minY = all.map(\.y).min()!, maxY = all.map(\.y).max()!
+        let margin = max(maxX - minX, maxY - minY) * 0.05 + 1e-9
+        let bounds = (min: Point2D(x: minX - margin, y: minY - margin), max: Point2D(x: maxX + margin, y: maxY + margin))
+        let d = PolygonRaster.dice(left, mirroredRight, gridSize: gridSize, bounds: bounds)
+        // Raster quantization: about one cell of boundary per side.
+        let uncertainty = 2.0 / Double(gridSize)
+        return Measurement(value: d, uncertainty: uncertainty, unit: .dice)
+    }
 }
