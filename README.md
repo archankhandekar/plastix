@@ -26,16 +26,50 @@ Nothing in the app makes a network call. There is no analytics, crash reporting,
 cloud dependency. The only identifier collected is a study ID restricted to letters,
 digits and dashes.
 
-## Build and run on a Mac
+## Deploy to your iPhone in one command
 
-Requirements: macOS with Xcode 16 or later, an iPhone running iOS 17 or later, an Apple
-developer team for device signing. The camera does not work in the simulator.
+Requirements: a Mac with Xcode 16 or later, an iPhone on iOS 17 or later with a cable,
+and an Apple developer team (a free personal team works for device builds). The camera
+does not work in the simulator.
+
+```bash
+git clone https://github.com/archankhandekar/plastix.git
+cd plastix
+./scripts/deploy-iphone.sh
+```
+
+The wizard checks Xcode, installs XcodeGen, asks for your Team ID, writes the git-ignored
+`Config/Local.xcconfig`, generates the project, lists connected devices, builds with
+automatic signing, installs the app on the phone and launches it. It remembers your
+answers in `.deploy.env` (git-ignored) so a re-run is quick. Its last, optional stage
+sets up the GitHub secrets for TestFlight uploads.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and push to `main`:
+
+- package tests on Linux (Swift 6.2 container) and on macOS;
+- an unsigned iOS simulator build of the app target through XcodeGen and `xcodebuild`,
+  which is the compile check for the SwiftUI layer that cannot run in this build
+  environment. The `xcodebuild` log is uploaded as an artifact.
+
+macOS runners cost ten times the Linux minute rate on private repositories; the app build
+takes a few minutes.
+
+`.github/workflows/testflight.yml` is a manual workflow that archives a Release build
+with cloud-managed automatic signing and uploads it to TestFlight. It needs the App Store
+Connect API key secrets and the team and bundle variables that the deploy wizard sets, and
+an app record in App Store Connect. It has not been exercised from this repository yet.
+
+## Build and run on a Mac by hand
+
+Use this when you would rather not run the wizard. Requirements are the same as above.
 
 ### Option A: generate the project with XcodeGen
 
 ```bash
 brew install xcodegen
-cd SymmetryPrototype
+cp Config/Local.xcconfig.example Config/Local.xcconfig   # then fill in DEVELOPMENT_TEAM
 xcodegen generate
 open SymmetryPrototype.xcodeproj
 ```
