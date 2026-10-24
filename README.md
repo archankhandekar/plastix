@@ -18,7 +18,7 @@ each number means.
 |------|---------|---------------|
 | `Sources/SymmetryCore` | Geometry, normalized frontal metrics with uncertainty, contour overlap, quality gates, similarity registration, comparison, report types. Foundation only. | `swift test`, 59 tests |
 | `Sources/SymmetryModels` | Session, capture-set and capture models, file storage with iOS data protection, report builder. Foundation only. | `swift test`, 21 tests |
-| `App/SymmetryPrototype` | SwiftUI app: sessions, AVFoundation capture with guides, review, landmark editor, comparison, timeline, export, settings. | Not compiled here (needs Xcode); see acceptance checklist |
+| `App/SymmetryPrototype` | SwiftUI app: sessions, AVFoundation capture with guides, review, landmark editor, comparison, timeline, export, settings. | Simulator build in CI; device run via acceptance checklist |
 | `project.yml` | XcodeGen spec that generates the Xcode project. | |
 | `docs/DESIGN.md`, `docs/PLAN.md` | Written design with rulings, and the task-by-task plan the code follows. | |
 
@@ -169,9 +169,9 @@ midline is vertical. "Left" and "right" are the patient's sides.
   residual is the separate check on frame stability.
 - The quality thresholds and the landmark sigma are starting guesses until the
   repeated-capture and expert-annotation study replaces them.
-- The app target has not been compiled or run in this build environment. The two Swift
-  packages were built and tested with Swift 6.2.4 on Linux; the SwiftUI layer was
-  reviewed statically. Expect to fix small compile issues on first build in Xcode.
+- The app target compiles for the iOS simulator in CI (Xcode 16, unsigned) and the two
+  Swift packages pass their tests on Linux and macOS, but the app has not yet been run on
+  a device from this repository. Work through the acceptance checklist on an iPhone.
 
 ## Safety, privacy and research use
 
