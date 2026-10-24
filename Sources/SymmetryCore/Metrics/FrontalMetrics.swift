@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Every field is optional: a metric that cannot be computed is nil, never zero, and the
 /// reason is in `flags`.
-public struct FrontalMetrics: Codable, Equatable, Sendable {
+public struct FrontalMetrics: Codable, Hashable, Sendable {
     /// (y of patient-left nipple − y of patient-right nipple) / L. Positive: left nipple lower.
     public let verticalNippleDifference: Measurement?
     /// |x of patient-left nipple| / L in the midline frame.

@@ -1,7 +1,7 @@
 import Foundation
 
 /// All hand-placed annotations for one image, in image pixel coordinates.
-public struct LandmarkSet: Codable, Equatable, Sendable {
+public struct LandmarkSet: Codable, Hashable, Sendable {
     public var points: [LandmarkType: Point2D]
     /// Patient-left breast contour as an ordered polyline in pixel coordinates.
     public var leftContour: [Point2D]

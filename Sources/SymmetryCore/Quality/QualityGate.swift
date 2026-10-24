@@ -2,7 +2,7 @@ import Foundation
 
 /// Thresholds for the capture quality gate. Defaults are starting guesses; they are
 /// editable in Settings and should be tuned on real captures.
-public struct QualityThresholds: Codable, Equatable, Sendable {
+public struct QualityThresholds: Codable, Hashable, Sendable {
     /// Minimum variance of the 3x3 Laplacian (on the downsampled luminance image).
     public var minBlurScore: Double
     /// Maximum fraction of pixels clipped at either end of the range.
@@ -19,7 +19,7 @@ public struct QualityThresholds: Codable, Equatable, Sendable {
 
 /// The result of the quality gate for one capture. Stored with the capture so that any
 /// comparison using it can surface the failures.
-public struct QualityReport: Codable, Equatable, Sendable {
+public struct QualityReport: Codable, Hashable, Sendable {
     public enum Failure: String, Codable, CaseIterable, Sendable {
         case blurry, overexposed, underexposed, tilted
 

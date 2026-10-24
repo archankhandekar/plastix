@@ -3,7 +3,7 @@ import Foundation
 /// A single reported quantity with its first-order uncertainty.
 ///
 /// Values are never millimetres or volumes: the prototype has no physical calibration.
-public struct Measurement: Codable, Equatable, Sendable {
+public struct Measurement: Codable, Hashable, Sendable {
     public enum Unit: String, Codable, Sendable {
         /// Fraction of the reference length (sternal notch to midline bottom).
         case ratioOfReference
