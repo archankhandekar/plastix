@@ -5,7 +5,7 @@ import SymmetryCore
 /// as good or bad.
 struct MetricRow: View {
     let name: String
-    let measurement: Measurement?
+    let measurement: MetricValue?
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -37,7 +37,7 @@ struct MetricDeltaRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func column(_ title: String, _ m: Measurement?) -> some View {
+    private func column(_ title: String, _ m: MetricValue?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).foregroundStyle(Theme.Colors.slate)
             Text(MetricFormatter.text(m)).foregroundStyle(m == nil ? Theme.Colors.slate : Theme.Colors.ink)
@@ -47,7 +47,7 @@ struct MetricDeltaRow: View {
 }
 
 enum MetricFormatter {
-    static func text(_ m: Measurement?) -> String {
+    static func text(_ m: MetricValue?) -> String {
         guard let m else { return "Not measured" }
         switch m.unit {
         case .ratioOfReference: return String(format: "%+.3f ± %.3f L", m.value, m.uncertainty)

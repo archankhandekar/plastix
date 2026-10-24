@@ -61,7 +61,7 @@ struct SettingsView: View {
 
     private var definitionsText: AttributedString {
         (try? AttributedString(markdown: MeasurementDefinitions.markdown,
-                               options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                               options: .init(interpretedSyntax: .full)))
             ?? AttributedString(MeasurementDefinitions.markdown)
     }
 

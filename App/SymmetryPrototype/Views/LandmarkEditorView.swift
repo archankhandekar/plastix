@@ -201,9 +201,14 @@ struct LandmarkCanvas: View {
     private func handleChange(_ value: DragGesture.Value, fit: CGRect) {
         fingerView = value.location
         switch mode {
-        case .point:
+        case .point(let selected):
             if dragging == nil, !dragMoved {
-                dragging = nearestLandmark(to: value.startLocation, fit: fit)
+                // Grab an existing landmark only when it is the selected one, or when the
+                // selected one is already placed; otherwise the gesture places the selection.
+                if let near = nearestLandmark(to: value.startLocation, fit: fit),
+                   near == selected || landmarks[selected] != nil {
+                    dragging = near
+                }
             }
             if value.translation.width.magnitude > 4 || value.translation.height.magnitude > 4 { dragMoved = true }
             if let d = dragging, dragMoved { landmarks[d] = toPixel(value.location, fit: fit) }
@@ -219,7 +224,9 @@ struct LandmarkCanvas: View {
     private func handleEnd(_ value: DragGesture.Value, fit: CGRect) {
         defer { dragging = nil; dragMoved = false; fingerView = nil; lastContourPoint = nil }
         guard case .point(let type) = mode else { onPlaced(mode); return }
-        if dragging == nil, !dragMoved {
+        // A tap, or a drag that started on empty image, places the selected landmark where
+        // the finger lifted. Gloved taps often travel a few points; that still places.
+        if dragging == nil {
             landmarks[type] = toPixel(value.location, fit: fit)
             onPlaced(mode)
         }
@@ -256,7 +263,7 @@ struct LandmarkCanvas: View {
             let r: CGFloat = 7
             ctx.stroke(Path(ellipseIn: CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r)), with: .color(color), lineWidth: 2)
             ctx.fill(Path(ellipseIn: CGRect(x: v.x - 1.5, y: v.y - 1.5, width: 3, height: 3)), with: .color(color))
-            ctx.draw(Text(type.shortName).font(.caption2).foregroundColor(color), at: CGPoint(x: v.x, y: v.y - r - 8))
+            ctx.draw(Text(type.shortName).font(.caption2).foregroundStyle(color), at: CGPoint(x: v.x, y: v.y - r - 8))
         }
     }
 

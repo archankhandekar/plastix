@@ -17,7 +17,7 @@ each number means.
 | Path | Purpose | Verified here |
 |------|---------|---------------|
 | `Sources/SymmetryCore` | Geometry, normalized frontal metrics with uncertainty, contour overlap, quality gates, similarity registration, comparison, report types. Foundation only. | `swift test`, 59 tests |
-| `Sources/SymmetryModels` | Session, capture-set and capture models, file storage with iOS data protection, report builder. Foundation only. | `swift test`, 19 tests |
+| `Sources/SymmetryModels` | Session, capture-set and capture models, file storage with iOS data protection, report builder. Foundation only. | `swift test`, 21 tests |
 | `App/SymmetryPrototype` | SwiftUI app: sessions, AVFoundation capture with guides, review, landmark editor, comparison, timeline, export, settings. | Not compiled here (needs Xcode); see acceptance checklist |
 | `project.yml` | XcodeGen spec that generates the Xcode project. | |
 | `docs/DESIGN.md`, `docs/PLAN.md` | Written design with rulings, and the task-by-task plan the code follows. | |

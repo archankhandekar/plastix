@@ -3,12 +3,12 @@ import Foundation
 /// One metric compared between a baseline and a current capture.
 public struct MetricDelta: Codable, Equatable, Sendable {
     public let name: String
-    public let baseline: Measurement?
-    public let current: Measurement?
+    public let baseline: MetricValue?
+    public let current: MetricValue?
     /// current − baseline, nil when either side is not measured.
-    public let delta: Measurement?
+    public let delta: MetricValue?
 
-    public init(name: String, baseline: Measurement?, current: Measurement?) {
+    public init(name: String, baseline: MetricValue?, current: MetricValue?) {
         self.name = name
         self.baseline = baseline
         self.current = current

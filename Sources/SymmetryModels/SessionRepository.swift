@@ -77,8 +77,19 @@ public final class SessionRepository {
         }
     }
 
+    /// Removes one capture's image file. Missing files are not an error.
+    public func deleteImage(for capture: Capture, in session: StudySession) throws {
+        let url = imageURL(for: capture, in: session)
+        if FileManager.default.fileExists(atPath: url.path) {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Removes every entry under the root, including directories whose session file no
+    /// longer decodes, so nothing survives "delete all".
     public func deleteAll() throws {
-        for s in loadAll() { try delete(s) }
+        let entries = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        for entry in entries { try FileManager.default.removeItem(at: entry) }
     }
 
     // MARK: - Protection

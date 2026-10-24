@@ -8,6 +8,7 @@ struct SessionView: View {
     let sessionID: UUID
 
     @State private var showingNewSet = false
+    @State private var pendingSet: CaptureSet?
     @State private var captureTarget: CaptureTarget?
 
     struct CaptureTarget: Identifiable {
@@ -56,10 +57,16 @@ struct SessionView: View {
                 .padding(Theme.Spacing.m)
                 .background(.bar)
             }
-            .sheet(isPresented: $showingNewSet) {
-                NewCaptureSetView { set in
-                    showingNewSet = false
+            .sheet(isPresented: $showingNewSet, onDismiss: {
+                // Present the capture screen only after the sheet has fully dismissed.
+                if let set = pendingSet {
+                    pendingSet = nil
                     captureTarget = CaptureTarget(set: set, angles: ViewAngle.allCases)
+                }
+            }) {
+                NewCaptureSetView { set in
+                    pendingSet = set
+                    showingNewSet = false
                 }
             }
             .fullScreenCover(item: $captureTarget) { target in

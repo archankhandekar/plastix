@@ -6,27 +6,27 @@ import Foundation
 /// reason is in `flags`.
 public struct FrontalMetrics: Codable, Hashable, Sendable {
     /// (y of patient-left nipple − y of patient-right nipple) / L. Positive: left nipple lower.
-    public let verticalNippleDifference: Measurement?
+    public let verticalNippleDifference: MetricValue?
     /// |x of patient-left nipple| / L in the midline frame.
-    public let leftNippleToMidline: Measurement?
+    public let leftNippleToMidline: MetricValue?
     /// |x of patient-right nipple| / L in the midline frame.
-    public let rightNippleToMidline: Measurement?
+    public let rightNippleToMidline: MetricValue?
     /// leftNippleToMidline − rightNippleToMidline.
-    public let nippleToMidlineDifference: Measurement?
+    public let nippleToMidlineDifference: MetricValue?
     /// (y of patient-left fold − y of patient-right fold) / L. Positive: left fold lower.
-    public let imfHeightDifference: Measurement?
+    public let imfHeightDifference: MetricValue?
     /// Dice overlap of the patient-left contour with the mirrored patient-right contour.
-    public let contourOverlap: Measurement?
+    public let contourOverlap: MetricValue?
     /// Sternal notch to midline bottom distance in pixels; 0 when degenerate.
     public let referenceLengthPixels: Double
     public let flags: [ReliabilityFlag]
 
-    public init(verticalNippleDifference: Measurement? = nil,
-                leftNippleToMidline: Measurement? = nil,
-                rightNippleToMidline: Measurement? = nil,
-                nippleToMidlineDifference: Measurement? = nil,
-                imfHeightDifference: Measurement? = nil,
-                contourOverlap: Measurement? = nil,
+    public init(verticalNippleDifference: MetricValue? = nil,
+                leftNippleToMidline: MetricValue? = nil,
+                rightNippleToMidline: MetricValue? = nil,
+                nippleToMidlineDifference: MetricValue? = nil,
+                imfHeightDifference: MetricValue? = nil,
+                contourOverlap: MetricValue? = nil,
                 referenceLengthPixels: Double,
                 flags: [ReliabilityFlag]) {
         self.verticalNippleDifference = verticalNippleDifference
@@ -40,7 +40,7 @@ public struct FrontalMetrics: Codable, Hashable, Sendable {
     }
 
     /// Named metrics in display order, for tables and reports.
-    public var namedMetrics: [(name: String, measurement: Measurement?)] {
+    public var namedMetrics: [(name: String, measurement: MetricValue?)] {
         [
             ("Vertical nipple difference", verticalNippleDifference),
             ("Patient left nipple to midline", leftNippleToMidline),
@@ -74,8 +74,8 @@ public enum FrontalMetricsCalculator {
         let sigma = landmarkSigmaRatio
         let sigmaDiff = sigma * 2.0.squareRoot()
 
-        func ratio(_ value: Double, _ u: Double) -> Measurement {
-            Measurement(value: value, uncertainty: u, unit: .ratioOfReference)
+        func ratio(_ value: Double, _ u: Double) -> MetricValue {
+            MetricValue(value: value, uncertainty: u, unit: .ratioOfReference)
         }
 
         let ln = n[.leftNipple], rn = n[.rightNipple]
@@ -116,7 +116,7 @@ public enum ContourOverlap {
     /// Dice overlap of the patient-left contour with the patient-right contour mirrored
     /// across the midline (x = 0 in the normalized frame). Nil when either contour has
     /// fewer than `minimumPoints`.
-    public static func compute(normalized set: LandmarkSet) -> Measurement? {
+    public static func compute(normalized set: LandmarkSet) -> MetricValue? {
         guard set.leftContour.count >= minimumPoints, set.rightContour.count >= minimumPoints else { return nil }
         let left = set.leftContour
         let mirroredRight = set.rightContour.map { $0.mirroredX(about: 0) }
@@ -128,6 +128,6 @@ public enum ContourOverlap {
         let d = PolygonRaster.dice(left, mirroredRight, gridSize: gridSize, bounds: bounds)
         // Raster quantization: about one cell of boundary per side.
         let uncertainty = 2.0 / Double(gridSize)
-        return Measurement(value: d, uncertainty: uncertainty, unit: .dice)
+        return MetricValue(value: d, uncertainty: uncertainty, unit: .dice)
     }
 }

@@ -155,9 +155,18 @@ struct CaptureView: View {
             pending = nil
             return
         }
+        let replaced = captureSet.captures[p.angle]
         captureSet.captures[p.angle] = capture
         session.update(captureSet)
-        store.save(session) // saved after every view so an interruption keeps what was captured
+        // Saved after every view so an interruption keeps what was captured.
+        guard store.save(session) else {
+            captureSet.captures[p.angle] = replaced
+            store.deleteImage(for: capture, in: session)
+            errorMessage = store.lastError ?? "Could not save the session."
+            pending = nil
+            return
+        }
+        if let replaced { store.deleteImage(for: replaced, in: session) }
         queue.removeFirst()
         pending = nil
         if queue.isEmpty { dismiss() }

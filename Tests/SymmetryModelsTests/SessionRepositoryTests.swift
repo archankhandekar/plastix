@@ -65,3 +65,40 @@ final class SessionRepositoryTests: XCTestCase {
         XCTAssertNoThrow(try repo.delete(StudySession(studyID: "ghost")))
     }
 }
+
+final class SessionRepositoryCleanupTests: XCTestCase {
+    private var root: URL!
+    private var repo: SessionRepository!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("SymmetryRepoCleanup-\(UUID().uuidString)")
+        repo = try SessionRepository(root: root)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: root) }
+
+    func testDeleteImageRemovesOnlyThatFile() throws {
+        let session = StudySession(studyID: "S-1")
+        try repo.save(session)
+        let a = Capture(angle: .frontal, imageFilename: "a.jpg", pixelWidth: 1, pixelHeight: 1, quality: nil, tiltDegrees: nil)
+        let b = Capture(angle: .leftOblique, imageFilename: "b.jpg", pixelWidth: 1, pixelHeight: 1, quality: nil, tiltDegrees: nil)
+        try repo.writeImage(Data([1]), for: a, in: session)
+        try repo.writeImage(Data([2]), for: b, in: session)
+        try repo.deleteImage(for: a, in: session)
+        XCTAssertNil(repo.readImage(for: a, in: session))
+        XCTAssertEqual(repo.readImage(for: b, in: session), Data([2]))
+        XCTAssertEqual(repo.loadAll().count, 1)
+        XCTAssertNoThrow(try repo.deleteImage(for: a, in: session)) // already gone
+    }
+
+    func testDeleteAllRemovesUndecodableSessionDirectoriesToo() throws {
+        try repo.save(StudySession(studyID: "A"))
+        let bad = root.appendingPathComponent("broken", isDirectory: true)
+        try FileManager.default.createDirectory(at: bad, withIntermediateDirectories: true)
+        try Data("{broken".utf8).write(to: bad.appendingPathComponent("session.json"))
+        try Data([1, 2, 3]).write(to: bad.appendingPathComponent("frontal.jpg"))
+        try repo.deleteAll()
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        XCTAssertTrue(remaining.isEmpty, "left behind: \(remaining)")
+    }
+}

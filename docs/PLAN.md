@@ -75,8 +75,8 @@
 - Test: `Tests/SymmetryCoreTests/FrontalMetricsTests.swift`
 
 **Interfaces:**
-- Produces: `struct Measurement: Codable, Equatable { let value: Double; let uncertainty: Double; let unit: Unit; enum Unit: String, Codable { case ratioOfReference, pixels, dice } }`.
-- Produces: `struct FrontalMetrics: Codable { let verticalNippleDifference: Measurement?; let leftNippleToMidline: Measurement?; let rightNippleToMidline: Measurement?; let nippleToMidlineDifference: Measurement?; let imfHeightDifference: Measurement?; let contourOverlap: Measurement?; let referenceLengthPixels: Double; let flags: [ReliabilityFlag] }`.
+- Produces: `struct MetricValue: Codable, Equatable { let value: Double; let uncertainty: Double; let unit: Unit; enum Unit: String, Codable { case ratioOfReference, pixels, dice } }`.
+- Produces: `struct FrontalMetrics: Codable { let verticalNippleDifference: MetricValue?; let leftNippleToMidline: MetricValue?; let rightNippleToMidline: MetricValue?; let nippleToMidlineDifference: MetricValue?; let imfHeightDifference: MetricValue?; let contourOverlap: MetricValue?; let referenceLengthPixels: Double; let flags: [ReliabilityFlag] }`.
 - Produces: `enum ReliabilityFlag: String, Codable { case missingLandmarks, degenerateMidline, contourTooSparse, lowImageQuality, excessiveTilt, registrationResidualHigh, qualityOverridden }`.
 - Produces: `enum FrontalMetricsCalculator { static func compute(_ set: LandmarkSet, landmarkSigmaRatio: Double = 0.015) -> FrontalMetrics }`.
 
@@ -126,7 +126,7 @@
 **Interfaces:**
 - Produces: `struct SimilarityTransform { let scale: Double; let rotation: Double; let translation: Point2D; func apply(_ p: Point2D) -> Point2D; static func fit(from: [Point2D], to: [Point2D]) -> SimilarityTransform? }` (Umeyama; nil for < 2 points or degenerate).
 - Produces: `struct RegistrationResult { let transform: SimilarityTransform; let rmsResidualRatio: Double; let isReliable: Bool }` and `enum Registration { static func register(_ current: LandmarkSet, to baseline: LandmarkSet, maxResidualRatio: Double = 0.05) -> RegistrationResult? }`.
-- Produces: `struct MetricDelta: Codable { let name: String; let baseline: Measurement?; let current: Measurement?; let delta: Measurement? }` and `struct CaptureComparison: Codable { let angle: ViewAngle; let deltas: [MetricDelta]; let registration: RegistrationSummary?; let flags: [ReliabilityFlag] }`.
+- Produces: `struct MetricDelta: Codable { let name: String; let baseline: MetricValue?; let current: MetricValue?; let delta: MetricValue? }` and `struct CaptureComparison: Codable { let angle: ViewAngle; let deltas: [MetricDelta]; let registration: RegistrationSummary?; let flags: [ReliabilityFlag] }`.
 - Produces: `enum Comparator { static func compare(baseline: FrontalMetrics, current: FrontalMetrics, registration: RegistrationResult?) -> CaptureComparison }` and `enum ComparisonError: Error { case angleMismatch }`.
 
 - [ ] Step 1: Tests: fit recovers a known scale 1.3, rotation 0.2 rad, translation (10, -5) within 1e-6 and residual ≈ 0; noisy correspondences give residual > 0 and `isReliable` false above threshold; delta of two measurements has uncertainty `sqrt(u1² + u2²)`; nil metric on either side gives nil delta; flags from both sides are unioned; a `.registrationResidualHigh` flag appears when unreliable.

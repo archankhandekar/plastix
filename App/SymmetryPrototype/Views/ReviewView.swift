@@ -87,7 +87,8 @@ struct ReviewView: View {
     private func delete(_ set: CaptureSet, in session: StudySession) {
         var s = session
         s.captureSets.removeAll { $0.id == set.id }
-        store.save(s)
+        guard store.save(s) else { return }
+        for capture in set.orderedCaptures { store.deleteImage(for: capture, in: session) }
         dismiss()
     }
 }

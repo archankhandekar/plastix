@@ -3,7 +3,7 @@ import Foundation
 /// A single reported quantity with its first-order uncertainty.
 ///
 /// Values are never millimetres or volumes: the prototype has no physical calibration.
-public struct Measurement: Codable, Hashable, Sendable {
+public struct MetricValue: Codable, Hashable, Sendable {
     public enum Unit: String, Codable, Sendable {
         /// Fraction of the reference length (sternal notch to midline bottom).
         case ratioOfReference
@@ -27,9 +27,9 @@ public struct Measurement: Codable, Hashable, Sendable {
 
     /// Difference `self - other` with uncertainties combined in quadrature.
     /// Returns nil when units differ.
-    public func subtracting(_ other: Measurement) -> Measurement? {
+    public func subtracting(_ other: MetricValue) -> MetricValue? {
         guard unit == other.unit else { return nil }
-        return Measurement(value: value - other.value,
+        return MetricValue(value: value - other.value,
                            uncertainty: (uncertainty * uncertainty + other.uncertainty * other.uncertainty).squareRoot(),
                            unit: unit)
     }

@@ -53,39 +53,48 @@ struct ExportView: View {
         isWorking = true
         message = nil
         exportURLs = []
-        do {
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
-            if FileManager.default.fileExists(atPath: dir.path) { try FileManager.default.removeItem(at: dir) }
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-            let report = ReportBuilder.report(for: session, settings: settings.reportSettings)
-            let stamp = ISO8601DateFormatter().string(from: report.generatedAt).replacingOccurrences(of: ":", with: "-")
-            var urls: [URL] = []
-
-            let jsonURL = dir.appendingPathComponent("\(session.studyID)-report-\(stamp).json")
-            try report.jsonData().write(to: jsonURL, options: [.atomic, .completeFileProtection])
-            urls.append(jsonURL)
-
-            let defsURL = dir.appendingPathComponent("measurement-definitions.md")
-            try Data(MeasurementDefinitions.markdown.utf8).write(to: defsURL, options: [.atomic, .completeFileProtection])
-            urls.append(defsURL)
-
-            if includeImages {
-                for (index, set) in session.orderedCaptureSets.enumerated() {
-                    for capture in set.orderedCaptures {
-                        guard let image = store.image(for: capture, in: session) else { continue }
-                        let rendered = capture.landmarks.map { ImageBridge.annotated(image, landmarks: $0) } ?? image
+        let report = ReportBuilder.report(for: session, settings: settings.reportSettings)
+        // Images are loaded on the main actor; encoding and annotation run off it.
+        struct ImageJob { let name: String; let image: UIImage; let landmarks: LandmarkSet? }
+        var jobs: [ImageJob] = []
+        if includeImages {
+            for (index, set) in session.orderedCaptureSets.enumerated() {
+                for capture in set.orderedCaptures {
+                    guard let image = store.image(for: capture, in: session) else { continue }
+                    jobs.append(ImageJob(name: "\(session.studyID)-set\(index + 1)-\(capture.angle.rawValue).jpg",
+                                         image: image, landmarks: capture.landmarks))
+                }
+            }
+        }
+        let studyID = session.studyID
+        Task {
+            do {
+                let urls = try await Task.detached(priority: .userInitiated) { () throws -> [URL] in
+                    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Export", isDirectory: true)
+                    if FileManager.default.fileExists(atPath: dir.path) { try FileManager.default.removeItem(at: dir) }
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    let stamp = ISO8601DateFormatter().string(from: report.generatedAt).replacingOccurrences(of: ":", with: "-")
+                    var urls: [URL] = []
+                    let jsonURL = dir.appendingPathComponent("\(studyID)-report-\(stamp).json")
+                    try report.jsonData().write(to: jsonURL, options: [.atomic, .completeFileProtection])
+                    urls.append(jsonURL)
+                    let defsURL = dir.appendingPathComponent("measurement-definitions.md")
+                    try Data(MeasurementDefinitions.markdown.utf8).write(to: defsURL, options: [.atomic, .completeFileProtection])
+                    urls.append(defsURL)
+                    for job in jobs {
+                        let rendered = job.landmarks.map { ImageBridge.annotated(job.image, landmarks: $0) } ?? job.image
                         guard let data = rendered.jpegData(compressionQuality: 0.9) else { continue }
-                        let url = dir.appendingPathComponent("\(session.studyID)-set\(index + 1)-\(capture.angle.rawValue).jpg")
+                        let url = dir.appendingPathComponent(job.name)
                         try data.write(to: url, options: [.atomic, .completeFileProtection])
                         urls.append(url)
                     }
-                }
+                    return urls
+                }.value
+                exportURLs = urls
+            } catch {
+                message = "Could not prepare the export: \(error.localizedDescription)"
             }
-            exportURLs = urls
-        } catch {
-            message = "Could not prepare the export: \(error.localizedDescription)"
+            isWorking = false
         }
-        isWorking = false
     }
 }

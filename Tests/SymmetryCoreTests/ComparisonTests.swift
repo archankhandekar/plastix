@@ -3,12 +3,12 @@ import XCTest
 
 final class ComparisonTests: XCTestCase {
     func testDeltaCombinesUncertaintyInQuadrature() throws {
-        let a = Measurement(value: 0.10, uncertainty: 0.03, unit: .ratioOfReference)
-        let b = Measurement(value: 0.04, uncertainty: 0.04, unit: .ratioOfReference)
+        let a = MetricValue(value: 0.10, uncertainty: 0.03, unit: .ratioOfReference)
+        let b = MetricValue(value: 0.04, uncertainty: 0.04, unit: .ratioOfReference)
         let d = try XCTUnwrap(a.subtracting(b))
         XCTAssertEqual(d.value, 0.06, accuracy: 1e-12)
         XCTAssertEqual(d.uncertainty, 0.05, accuracy: 1e-12)
-        XCTAssertNil(a.subtracting(Measurement(value: 1, uncertainty: 0, unit: .pixels)))
+        XCTAssertNil(a.subtracting(MetricValue(value: 1, uncertainty: 0, unit: .pixels)))
     }
 
     func testComparisonReportsDeltaPerMetric() throws {

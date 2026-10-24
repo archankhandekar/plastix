@@ -39,13 +39,26 @@ final class SessionStore: ObservableObject {
         return session
     }
 
-    func save(_ session: StudySession) {
+    /// Saves and returns false (with `lastError` set) when the write fails.
+    @discardableResult
+    func save(_ session: StudySession) -> Bool {
         do {
             try repository.save(session)
             if let i = sessions.firstIndex(where: { $0.id == session.id }) { sessions[i] = session } else { sessions.insert(session, at: 0) }
+            return true
         } catch {
             lastError = "Could not save the session: \(error.localizedDescription)"
+            return false
         }
+    }
+
+    func deleteImage(for capture: Capture, in session: StudySession) {
+        do {
+            try repository.deleteImage(for: capture, in: session)
+        } catch {
+            lastError = "Could not delete an image: \(error.localizedDescription)"
+        }
+        imageCache.removeObject(forKey: capture.imageFilename as NSString)
     }
 
     func delete(_ session: StudySession) {
