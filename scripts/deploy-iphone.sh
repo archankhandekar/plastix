@@ -204,6 +204,31 @@ SCHEME="SymmetryPrototype"
 XCCONFIG="Config/Local.xcconfig"
 DERIVED="build/DerivedData"
 
+# ask_team_id VAR: a Team ID is exactly 10 letters or digits. Re-asks until it is.
+ask_team_id() {
+  local key="$1" value
+  while true; do
+    ask "$key" "Paste the Team ID (10 letters or digits):" || true
+    value="${!key}"
+    value="${value//[[:space:]]/}"
+    if [[ "$value" =~ ^[A-Z0-9]{10}$ ]]; then printf -v "$key" '%s' "$value"; return; fi
+    warn "'$value' is not a Team ID. It looks like A1B2C3D4E5: developer.apple.com/account > Membership details, or Xcode > Settings > Accounts."
+  done
+}
+
+# ask_bundle_id VAR: reverse-DNS, e.g. org.example.App. Empty keeps the default.
+ask_bundle_id() {
+  local key="$1" value default="org.research.symmetry.SymmetryPrototype"
+  while true; do
+    ask "$key" "Bundle identifier [$default]:" || true
+    value="${!key}"
+    value="${value//[[:space:]]/}"
+    [[ -z "$value" ]] && value="$default"
+    if [[ "$value" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then printf -v "$key" '%s' "$value"; return; fi
+    warn "'$value' is not a bundle identifier. Use dot-separated words like $default."
+  done
+}
+
 # write_xcconfig TEAM BUNDLE writes the git-ignored signing config Xcode reads.
 write_xcconfig() {
   mkdir -p Config
@@ -277,12 +302,19 @@ xcodegen --version
 # ── 3. Team and bundle identifier ─────────────────────────────────────────
 stage "Apple Developer team"
 say "Device builds must be signed by your team."
+if saved=$(_existing DEVELOPMENT_TEAM) && ! [[ "${saved//[[:space:]]/}" =~ ^[A-Z0-9]{10}$ ]]; then
+  warn "The remembered Team ID '$saved' is not valid; it will be asked again."
+  write_env DEVELOPMENT_TEAM ""
+fi
+if saved=$(_existing PRODUCT_BUNDLE_IDENTIFIER) && ! [[ "${saved//[[:space:]]/}" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+  warn "The remembered bundle identifier '$saved' is not valid; it will be asked again."
+  write_env PRODUCT_BUNDLE_IDENTIFIER ""
+fi
 open_url "https://developer.apple.com/account"
 step "Sign in, open Membership details, and copy the Team ID (10 characters)."
-ask DEVELOPMENT_TEAM "Paste the Team ID:"
+ask_team_id DEVELOPMENT_TEAM
 step "Choose the bundle identifier. It must be unique to your team; the default is fine for a personal or research team."
-ask PRODUCT_BUNDLE_IDENTIFIER "Bundle identifier [org.research.symmetry.SymmetryPrototype]:" || true
-PRODUCT_BUNDLE_IDENTIFIER="${PRODUCT_BUNDLE_IDENTIFIER:-org.research.symmetry.SymmetryPrototype}"
+ask_bundle_id PRODUCT_BUNDLE_IDENTIFIER
 write_env DEVELOPMENT_TEAM "$DEVELOPMENT_TEAM"
 write_env PRODUCT_BUNDLE_IDENTIFIER "$PRODUCT_BUNDLE_IDENTIFIER"
 write_xcconfig "$DEVELOPMENT_TEAM" "$PRODUCT_BUNDLE_IDENTIFIER"
@@ -334,8 +366,8 @@ while true; do
     warn "Signing failed. Common causes: the Apple ID is not added in Xcode > Settings > Accounts, the Team ID is wrong, or the bundle ID is taken by another team."
     step "Fix the account or Team ID, then press Enter. Current team: $DEVELOPMENT_TEAM, bundle ID: $PRODUCT_BUNDLE_IDENTIFIER"
     if confirm "Re-enter the Team ID and bundle ID?"; then
-      ask DEVELOPMENT_TEAM "Team ID:"
-      ask PRODUCT_BUNDLE_IDENTIFIER "Bundle identifier:"
+      ask_team_id DEVELOPMENT_TEAM
+      ask_bundle_id PRODUCT_BUNDLE_IDENTIFIER
       write_env DEVELOPMENT_TEAM "$DEVELOPMENT_TEAM"
       write_env PRODUCT_BUNDLE_IDENTIFIER "$PRODUCT_BUNDLE_IDENTIFIER"
       write_xcconfig "$DEVELOPMENT_TEAM" "$PRODUCT_BUNDLE_IDENTIFIER"
