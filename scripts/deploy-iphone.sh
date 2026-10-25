@@ -307,17 +307,48 @@ write_env DEVICE_ID "$DEVICE_ID"
 # ── 6. Build, install, launch ─────────────────────────────────────────────
 stage "Build, install and launch"
 say "Building a Debug build signed with automatic provisioning. The first build registers the device and creates a profile."
-xcodebuild build \
-  -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
-  -destination "id=$DEVICE_ID" \
-  -derivedDataPath "$DERIVED" \
-  -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
-  | grep -E "error:|warning: .*signing|BUILD (SUCCEEDED|FAILED)" || true
+mkdir -p build
 APP_PATH="$DERIVED/Build/Products/Debug-iphoneos/$SCHEME.app"
-if [[ ! -d "$APP_PATH" ]]; then
-  warn "Build output not found at $APP_PATH. Open $PROJECT in Xcode, fix signing under Signing & Capabilities, and run from there."
-  exit 1
-fi
+while true; do
+  rm -rf "$APP_PATH"
+  xcodebuild build \
+    -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+    -destination "id=$DEVICE_ID" \
+    -derivedDataPath "$DERIVED" \
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+    > build/device-build.log 2>&1 || true
+  grep -E "error:|warning: .*signing|BUILD (SUCCEEDED|FAILED)" build/device-build.log | sort -u | head -n 30 || true
+  [[ -d "$APP_PATH" ]] && break
+  printf '\n'
+  if grep -q "Developer Mode disabled" build/device-build.log; then
+    warn "The iPhone has Developer Mode turned off."
+    step "On the phone: Settings > Privacy & Security > Developer Mode (at the bottom) > turn on."
+    step "Tap Restart. After it reboots and you unlock it, confirm 'Turn on Developer Mode'."
+    step "Keep the phone unlocked and connected."
+    pause "Press Enter to build again."
+  elif grep -qiE "not paired|pairing|locked|Trust This Computer|device is busy|not available|Timed out waiting" build/device-build.log; then
+    warn "The Mac cannot talk to the phone yet."
+    step "Unlock the phone, tap Trust if it asks, and wait until it finishes connecting (unplug and replug if needed)."
+    pause "Press Enter to build again."
+  elif grep -qiE "No profiles|signing|provisioning|No Account|Team" build/device-build.log; then
+    warn "Signing failed. Common causes: the Apple ID is not added in Xcode > Settings > Accounts, the Team ID is wrong, or the bundle ID is taken by another team."
+    step "Fix the account or Team ID, then press Enter. Current team: $DEVELOPMENT_TEAM, bundle ID: $PRODUCT_BUNDLE_IDENTIFIER"
+    if confirm "Re-enter the Team ID and bundle ID?"; then
+      ask DEVELOPMENT_TEAM "Team ID:"
+      ask PRODUCT_BUNDLE_IDENTIFIER "Bundle identifier:"
+      write_env DEVELOPMENT_TEAM "$DEVELOPMENT_TEAM"
+      write_env PRODUCT_BUNDLE_IDENTIFIER "$PRODUCT_BUNDLE_IDENTIFIER"
+      write_xcconfig "$DEVELOPMENT_TEAM" "$PRODUCT_BUNDLE_IDENTIFIER"
+      xcodegen generate
+    fi
+  else
+    warn "The build failed for another reason. The full log is in build/device-build.log."
+    if ! confirm "Try the build again?"; then
+      say "Open $PROJECT in Xcode, select your iPhone as the run destination and press Run; Xcode shows the exact error."
+      exit 1
+    fi
+  fi
+done
 say "Installing on the phone."
 xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"
 note "With a personal (free) team, the phone may now ask you to trust the developer: Settings > General > VPN & Device Management."
