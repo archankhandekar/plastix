@@ -210,7 +210,7 @@ detect_teams() {
   defaults export com.apple.dt.Xcode - 2>/dev/null | python3 -c '
 import plistlib, sys
 try:
-    d = plistlib.load(sys.stdin.buffer)
+    d = plistlib.loads(sys.stdin.buffer.read())
 except Exception:
     sys.exit(0)
 seen = set()
