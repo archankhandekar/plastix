@@ -1,0 +1,87 @@
+name: TestFlight
+
+# Manual: archives a Release build with cloud-managed automatic signing and uploads it to
+# App Store Connect (TestFlight). Needs the secrets and variables that
+# scripts/deploy-iphone.sh sets in its TestFlight stage:
+#   secrets: APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_API_KEY_P8 (base64 of the .p8)
+#   variables: APPLE_TEAM_ID, APP_BUNDLE_ID
+# The app record for APP_BUNDLE_ID must already exist in App Store Connect.
+# This workflow has not been run from this repository yet; expect to adjust it on first use.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    name: Archive and upload to TestFlight
+    runs-on: macos-15
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APP_BUNDLE_ID: ${{ vars.APP_BUNDLE_ID }}
+      KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -n1)/Contents/Developer" && xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Write signing configuration and API key
+        run: |
+          test -n "$APPLE_TEAM_ID" || { echo "APPLE_TEAM_ID variable is not set"; exit 1; }
+          test -n "$APP_BUNDLE_ID" || { echo "APP_BUNDLE_ID variable is not set"; exit 1; }
+          test -n "$KEY_ID" || { echo "APP_STORE_CONNECT_KEY_ID secret is not set"; exit 1; }
+          printf 'DEVELOPMENT_TEAM = %s\nPRODUCT_BUNDLE_IDENTIFIER = %s\n' "$APPLE_TEAM_ID" "$APP_BUNDLE_ID" > Config/Local.xcconfig
+          mkdir -p build
+          printf '%s' "${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}" | base64 --decode > build/AuthKey.p8
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          PLIST
+      - name: Generate the Xcode project
+        run: xcodegen generate
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project SymmetryPrototype.xcodeproj \
+            -scheme SymmetryPrototype \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/SymmetryPrototype.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$PWD/build/AuthKey.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            | tee build/archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)"
+      - name: Export and upload
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath build/SymmetryPrototype.xcarchive \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$PWD/build/AuthKey.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            | tee build/export.log | grep -E "error:|EXPORT (SUCCEEDED|FAILED)|Upload"
+      - name: Remove the API key
+        if: always()
+        run: rm -f build/AuthKey.p8
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs
+          path: |
+            build/archive.log
+            build/export.log

@@ -3,3 +3,7 @@
 *.xcodeproj
 DerivedData/
 .DS_Store
+Config/Local.xcconfig
+.deploy.env
+build/
+.env
