@@ -198,21 +198,65 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 # Values captured by this wizard are remembered in .deploy.env (git-ignored).
-ENV_FILE="${ENV_FILE:-.deploy.env}"
+ENV_FILE=".deploy.env"
 PROJECT="SymmetryPrototype.xcodeproj"
 SCHEME="SymmetryPrototype"
 XCCONFIG="Config/Local.xcconfig"
 DERIVED="build/DerivedData"
 
-# ask_team_id VAR: a Team ID is exactly 10 letters or digits. Re-asks until it is.
+# detect_teams prints "TEAMID<tab>name<tab>kind<tab>apple-id" for every team Xcode knows
+# from the Apple IDs signed in under Xcode > Settings > Accounts.
+detect_teams() {
+  defaults export com.apple.dt.Xcode - 2>/dev/null | python3 -c '
+import plistlib, sys
+try:
+    d = plistlib.load(sys.stdin.buffer)
+except Exception:
+    sys.exit(0)
+seen = set()
+for acct, lst in (d.get("IDEProvisioningTeams") or {}).items():
+    for t in lst or []:
+        tid = t.get("teamID")
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        kind = "personal team" if t.get("isFreeProvisioningTeam") else (t.get("teamType") or "team")
+        name = t.get("teamName") or ""
+        print(tid + "\t" + name + "\t" + kind + "\t" + str(acct))
+' 2>/dev/null || true
+}
+
+# ask_team_id VAR: a Team ID is exactly 10 letters or digits. Offers the teams Xcode
+# knows; Enter takes the first one. Re-asks until the value is valid.
 ask_team_id() {
-  local key="$1" value
+  local key="$1" value default="" teams
+  teams=$(detect_teams)
+  if [[ -n "$teams" ]]; then
+    say "Teams found in Xcode's accounts:"
+    while IFS=$'\t' read -r tid name kind acct; do
+      note "  $tid  $name ($kind, $acct)"
+      [[ -z "$default" ]] && default="$tid"
+    done <<< "$teams"
+  else
+    warn "Xcode has no signed-in team yet. Open Xcode > Settings > Accounts, add your Apple ID, then come back."
+    note "A free Apple ID gives you a personal team that can install on your own iPhone."
+  fi
   while true; do
-    ask "$key" "Paste the Team ID (10 letters or digits):" || true
+    if [[ -n "$default" ]]; then
+      ask "$key" "Team ID [Enter for $default]:" || true
+    else
+      ask "$key" "Paste the Team ID (10 letters or digits):" || true
+    fi
     value="${!key}"
     value="${value//[[:space:]]/}"
+    [[ -z "$value" && -n "$default" ]] && value="$default"
     if [[ "$value" =~ ^[A-Z0-9]{10}$ ]]; then printf -v "$key" '%s' "$value"; return; fi
-    warn "'$value' is not a Team ID. It looks like A1B2C3D4E5: developer.apple.com/account > Membership details, or Xcode > Settings > Accounts."
+    warn "'$value' is not a Team ID. It looks like A1B2C3D4E5: developer.apple.com/account > Membership details, or sign in under Xcode > Settings > Accounts and re-run."
+    if [[ -z "$teams" ]]; then
+      pause "Press Enter after adding the account in Xcode to look for teams again."
+      teams=$(detect_teams); default=""
+      [[ -n "$teams" ]] && default=$(printf '%s\n' "$teams" | head -n1 | cut -f1)
+    fi
   done
 }
 
