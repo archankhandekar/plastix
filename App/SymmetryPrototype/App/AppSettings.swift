@@ -37,7 +37,7 @@ final class AppSettings: ObservableObject {
         maxTiltDegrees = defaults.object(forKey: Key.tilt) as? Double ?? t.maxTiltDegrees
         maxResidualRatio = defaults.object(forKey: Key.residual) as? Double ?? Registration.defaultMaxResidualRatio
         exportPrivacyAcknowledged = defaults.bool(forKey: Key.exportAck)
-        ghostOverlayEnabled = defaults.bool(forKey: Key.ghost)
+        ghostOverlayEnabled = defaults.object(forKey: Key.ghost) as? Bool ?? true
         researchNoticeAccepted = defaults.bool(forKey: Key.noticeSeen)
     }
 

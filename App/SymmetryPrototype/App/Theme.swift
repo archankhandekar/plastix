@@ -54,7 +54,64 @@ extension Color {
 extension Font {
     /// Numbers with tabular digits so ± columns line up.
     static let metric = Font.system(.body, design: .default).monospacedDigit()
+    /// Kept for compatibility; no view may use it (it is below the readable floor).
     static let metricSmall = Font.system(.caption, design: .default).monospacedDigit()
+
+    /// Screen titles inside content, e.g. the research notice.
+    static let screenTitle = Font.title2.weight(.semibold)
+    /// Card titles, step titles, set titles and section headings.
+    static let stepTitle = Font.title3.weight(.semibold)
+    /// All explanatory copy.
+    static let readable = Font.body
+    /// Single metric values in MetricRow.
+    static let metricLarge = Font.system(.title3, design: .default).monospacedDigit()
+    /// Smallest font any view may use for user-facing text.
+    static let readableFloor = Font.subheadline
+}
+
+extension Theme.Colors {
+    /// Completed-step ticks only.
+    static let done = accent
+    /// Cards and step lists share one surface.
+    static let cardBackground = surface
+}
+
+/// A quiet grouping container: surface background, hairline stroke, rounded corners.
+/// Cards group related content; they are never a dashboard.
+struct CardStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(Theme.Spacing.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Theme.Colors.hairline, lineWidth: 1))
+    }
+}
+
+/// Outlined capsule button for the dark camera screen (Stop, Match pose).
+struct OutlinedCaptureButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(.white)
+            .padding(.horizontal, Theme.Spacing.m)
+            .frame(minHeight: Theme.tapTarget)
+            .background(Capsule().stroke(Color.white, lineWidth: 1.5))
+            .contentShape(Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.5)
+    }
+}
+
+extension View {
+    func cardStyle() -> some View { modifier(CardStyle()) }
+
+    /// Full-width row with the minimum tap height, hit-testable across its whole area.
+    func tapTarget() -> some View {
+        frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
+            .contentShape(Rectangle())
+    }
 }
 
 /// Rounded text field style shared by forms.
