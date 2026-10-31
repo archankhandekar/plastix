@@ -23,8 +23,6 @@ targets:
         product: SymmetryCore
       - package: SymmetryCore
         product: SymmetryModels
-    info:
-      path: App/SymmetryPrototype/Info.plist
     configFiles:
       Debug: Config/Local.xcconfig
       Release: Config/Local.xcconfig
