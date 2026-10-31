@@ -140,9 +140,7 @@ struct SessionView: View {
                 }
             }
             .fullScreenCover(item: $captureTarget) { target in
-                // WI4 changes this call to CaptureView(sessionID:captureSet:setIndex:anglesToCapture:)
-                // with `setIndex: target.index`; the index is already carried on the target.
-                CaptureView(sessionID: sessionID, captureSet: target.set, anglesToCapture: target.angles)
+                CaptureView(sessionID: sessionID, captureSet: target.set, setIndex: target.index, anglesToCapture: target.angles)
             }
         } else {
             ContentUnavailableView("Session not found", systemImage: "questionmark.folder")
@@ -156,9 +154,8 @@ struct SessionView: View {
         switch route {
         case .markPoints(let setID, let captureID):
             LandmarkEditorView(sessionID: sessionID, setID: setID, captureID: captureID)
-        case .compare:
-            // WI6 adds ComparisonView(sessionID:earlierID:laterID:); pass the route's ids there.
-            ComparisonView(sessionID: sessionID)
+        case .compare(let earlierID, let laterID):
+            ComparisonView(sessionID: sessionID, earlierID: earlierID, laterID: laterID)
         case .export:
             ExportView(sessionID: sessionID)
         case .review(let setID):
