@@ -35,6 +35,7 @@ struct CaptureSetCard: View {
     let onMarkPoints: (CaptureSet, Int, Capture) -> Void
 
     @State private var isExpanded = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
@@ -65,7 +66,9 @@ struct CaptureSetCard: View {
                 .foregroundStyle(Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(alignment: .top, spacing: Theme.Spacing.m) {
+            // Three 88pt columns side by side (8pt gaps fit a 375pt phone); stacked vertically
+            // at accessibility text sizes so captions and badges have room.
+            thumbnailLayout {
                 ForEach(ViewAngle.allCases) { angle in
                     let capture = set.captures[angle]
                     Thumbnail(image: capture.flatMap { store.image(for: $0, in: session) },
@@ -98,6 +101,12 @@ struct CaptureSetCard: View {
     }
 
     // MARK: - Pieces
+
+    private var thumbnailLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.m))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.s))
+    }
 
     /// "Warning" when the quality check ran and failed, "Not checked" when it never ran,
     /// "Marked" when all six points are placed. Nothing for a missing photo.
@@ -141,6 +150,7 @@ struct CaptureSetCard: View {
         let image: UIImage?
         let label: String
         let badges: [String]
+        @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
         var body: some View {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -154,7 +164,7 @@ struct CaptureSetCard: View {
                             Theme.Colors.hairline
                             Text("Not taken")
                                 .font(.subheadline)
-                                .foregroundStyle(Theme.Colors.slate)
+                                .foregroundStyle(Theme.Colors.ink)
                                 .multilineTextAlignment(.center)
                         }
                     }
@@ -169,12 +179,14 @@ struct CaptureSetCard: View {
                     Text(badge)
                         .font(.subheadline)
                         .foregroundStyle(color(for: badge))
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, Theme.Spacing.s)
                         .padding(.vertical, 2)
                         .overlay(Capsule().stroke(color(for: badge), lineWidth: 1))
                 }
             }
-            .frame(width: 88, alignment: .leading)
+            // Column matches the 88pt photo; at accessibility sizes it takes the full width.
+            .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 88, alignment: .leading)
             .accessibilityElement(children: .combine)
         }
 

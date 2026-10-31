@@ -3,6 +3,8 @@ import SwiftUI
 /// The single "Next: <verb>" button every session-level screen ends with. Callers place
 /// it in `.safeAreaInset(edge: .bottom)`.
 struct NextActionBar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let title: String
     var detail: String? = nil
     var secondaryTitle: String? = nil
@@ -11,7 +13,9 @@ struct NextActionBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            if let detail {
+            // The inset cannot scroll, so at accessibility text sizes the detail line is dropped
+            // and only the buttons stay.
+            if let detail, !dynamicTypeSize.isAccessibilitySize {
                 Text(detail)
                     .font(.body)
                     .foregroundStyle(Theme.Colors.ink)

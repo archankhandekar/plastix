@@ -10,7 +10,7 @@ enum Theme {
         static let slate = Color(light: 0x5C6B69, dark: 0x9FB0AD)
         static let hairline = Color(light: 0xD9DEDC, dark: 0x2B3534)
         static let accent = Color(light: 0x1E7F74, dark: 0x3FB3A6)
-        static let caution = Color(light: 0xB8741A, dark: 0xE0A04A)
+        static let caution = Color(light: 0x8F5A12, dark: 0xE0A04A)
         static let unreliable = Color(light: 0x8A3B3B, dark: 0xD97B7B)
         static let capture = Color(hex: 0x0E1413)
         static let guide = Color(hex: 0x3FB3A6)
