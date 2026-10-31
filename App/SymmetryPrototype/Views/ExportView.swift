@@ -3,8 +3,8 @@ import SymmetryCore
 import SymmetryModels
 import UIKit
 
-/// Builds a de-identified report and hands it to the system share sheet. Nothing leaves
-/// the device any other way.
+/// Step 4: builds a de-identified report and hands it to the system share sheet. Nothing
+/// leaves the phone any other way.
 struct ExportView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
@@ -12,46 +12,165 @@ struct ExportView: View {
 
     @State private var includeImages = false
     @State private var exportURLs: [URL] = []
-    @State private var message: String?
+    @State private var errorText: String?
     @State private var isWorking = false
 
+    private var session: StudySession? { store.session(id: sessionID) }
+
     var body: some View {
-        Form {
-            Section {
-                Toggle("Privacy and IRB review completed", isOn: $settings.exportPrivacyAcknowledged)
-                Text("Export is available only after the study's privacy, security and ethics review covers moving data off this device. This acknowledgment is recorded on the device, not in the report.")
-                    .font(.footnote).foregroundStyle(Theme.Colors.slate)
-            } header: { Text("Before exporting") }
-
-            Section {
-                Toggle("Include annotated images", isOn: $includeImages)
-                Text("The JSON report holds the study ID, stage labels, landmark coordinates, quality results and metrics. Images are intraoperative photographs and may be identifying; they are left out unless you turn this on.")
-                    .font(.footnote).foregroundStyle(Theme.Colors.slate)
-            } header: { Text("Contents") }
-
-            Section {
-                Button(isWorking ? "Preparing…" : "Prepare export", action: prepare)
-                    .disabled(!settings.exportPrivacyAcknowledged || isWorking)
-                if !exportURLs.isEmpty {
-                    ShareLink(items: exportURLs) {
-                        Label("Share \(exportURLs.count) file\(exportURLs.count == 1 ? "" : "s")", systemImage: "square.and.arrow.up")
+        if let session {
+            let report = ReportBuilder.report(for: session, settings: settings.reportSettings)
+            let progress = SessionProgress(session: session, settings: settings.reportSettings,
+                                           hasCompared: ComparedFlag.isSet(sessionID: sessionID))
+            let photoCount = session.orderedCaptureSets.reduce(0) { $0 + $1.orderedCaptures.count }
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                    summaryCard(session: session, report: report, progress: progress)
+                    stepsCard(photoCount: photoCount)
+                    if !exportURLs.isEmpty {
+                        shareCard
                     }
-                    Text("The share sheet is the only way data leaves the device. Files are removed from the export folder when you prepare the next export.")
-                        .font(.footnote).foregroundStyle(Theme.Colors.slate)
+                    if let errorText {
+                        GuidanceCard(kind: .unreliable, title: "Could not prepare the files", body: errorText)
+                    }
+                    ResearchNoticeBanner()
                 }
-                if let message { Text(message).font(.footnote).foregroundStyle(Theme.Colors.unreliable) }
+                .padding(Theme.Spacing.l)
+            }
+            .background(Theme.Colors.paper)
+            .navigationTitle("Export")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) { bottomBar }
+        } else {
+            ContentUnavailableView("Session not found", systemImage: "questionmark.folder")
+        }
+    }
+
+    // MARK: - Cards
+
+    @ViewBuilder
+    private func summaryCard(session: StudySession, report: ResearchReport, progress: SessionProgress) -> some View {
+        let sets = report.captureSets.count
+        let measured = progress.measuredSets.count
+        let comparisons = report.comparisons.count
+        let sigma = settings.landmarkSigmaRatio
+        let gapLines = session.orderedCaptureSets.enumerated().flatMap { offset, set in
+            CaptureSetStatus(set: set, index: offset + 1, sigma: sigma).gapLines
+        }
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text("This report will contain: \(sets) photo set\(sets == 1 ? "" : "s"), \(measured) measured frontal photo\(measured == 1 ? "" : "s"), \(comparisons) comparison\(comparisons == 1 ? "" : "s"). No names. Photos are left out unless you include them.")
+                .font(.body)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if progress.measuredSets.isEmpty {
+                GuidanceCard(kind: .caution,
+                             body: "This session has no measured set yet. You can still export, but the report will hold no measurements.")
+            }
+            if !gapLines.isEmpty {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    ForEach(gapLines, id: \.self) { line in
+                        Text(line)
+                            .font(.body)
+                            .foregroundStyle(Theme.Colors.caution)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .cardStyle()
+    }
+
+    private func stepsCard(photoCount: Int) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Toggle(isOn: $settings.exportPrivacyAcknowledged) {
+                    Text("1  Confirm the ethics (IRB) review covers moving data off this phone")
+                        .font(.body)
+                        .foregroundStyle(Theme.Colors.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .tint(Theme.Colors.accent)
+                .frame(minHeight: Theme.tapTarget)
+                Text("Export is available only after the study's privacy, security and ethics review covers moving data off this device. This is recorded on the phone, not in the report.")
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.slate)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section { ResearchNoticeBanner() }
+            Divider()
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Toggle(isOn: $includeImages) {
+                    Text("2  Include photos with the points drawn on them (optional, \(photoCount) photos)")
+                        .font(.body)
+                        .foregroundStyle(Theme.Colors.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .tint(Theme.Colors.accent)
+                .frame(minHeight: Theme.tapTarget)
+                Text("The report holds the study code, stage labels, point positions, photo checks and measurements. Photos may be identifying, so they are left out unless you turn this on.")
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.slate)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            Text("3  Prepare and share")
+                .font(.body)
+                .foregroundStyle(Theme.Colors.ink)
+                .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
         }
-        .navigationTitle("Export")
-        .navigationBarTitleDisplayMode(.inline)
+        .cardStyle()
     }
+
+    private var shareTitle: String {
+        let n = exportURLs.count
+        return n == 2 ? "Share 2 files (report and definitions)" : "Share \(n) files (report, definitions and \(n - 2) photos)"
+    }
+
+    private var shareCard: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            ShareLink(items: exportURLs) {
+                Text(shareTitle)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            Text("The share sheet is the only way data leaves this phone. The files are replaced the next time you prepare an export.")
+                .font(.body)
+                .foregroundStyle(Theme.Colors.slate)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Done. You can go back to Sessions.")
+                .font(.body)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .cardStyle()
+    }
+
+    private var bottomBar: some View {
+        let blocked = !settings.exportPrivacyAcknowledged || isWorking
+        return VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            if !settings.exportPrivacyAcknowledged {
+                Text("Confirm step 1 first")
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.caution)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button(isWorking ? "Preparing…" : "Prepare the files", action: prepare)
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(blocked)
+                .opacity(blocked ? 0.5 : 1)
+        }
+        .padding(Theme.Spacing.m)
+        .background(.bar)
+    }
+
+    // MARK: - Preparing the files
 
     private func prepare() {
         guard let session = store.session(id: sessionID) else { return }
         isWorking = true
-        message = nil
+        errorText = nil
         exportURLs = []
         let report = ReportBuilder.report(for: session, settings: settings.reportSettings)
         // Images are loaded on the main actor; encoding and annotation run off it.
@@ -92,7 +211,7 @@ struct ExportView: View {
                 }.value
                 exportURLs = urls
             } catch {
-                message = "Could not prepare the export: \(error.localizedDescription)"
+                errorText = error.localizedDescription
             }
             isWorking = false
         }
