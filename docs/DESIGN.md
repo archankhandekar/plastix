@@ -107,12 +107,19 @@ Ruling: yes. Cost if wrong: none significant.
 
 **Q13. Visual design.** See "Design direction" below. One accent colour, large targets,
 dark capture surfaces, light review surfaces, system font.
-Ruling: yes.
+Ruling: yes, amended after the readability review. Content now lives in quiet surface cards
+with a hairline stroke, used only as grouping containers for a numbered wizard (1 Take
+photos, 2 Mark points, 3 Compare, 4 Export). This is not a stats dashboard: numbers are
+folded away behind "Show measurements" until a frontal photo has all six points, and every
+number is shown as its untouched `MetricFormatter` string with a one-line plain-English
+meaning. Cost if wrong: the cards are a container style, not a layout, and can be flattened.
 
 **Q14. Ghost overlay.** The spec lists the prior-image ghost overlay as a future milestone.
 With a live AVFoundation preview it costs one image view, so it is included as a toggle on the
-capture screen, off by default.
-Ruling: yes. Cost if wrong: remove the toggle.
+capture screen. Amended: the toggle is labelled "Match pose" and defaults to on for fresh
+installs, because a repeatable pose is the whole point of a second set; it is disabled when
+no earlier set in the session has the current angle.
+Ruling: yes. Cost if wrong: remove the toggle, or flip the default back to off.
 
 **Q15. Platform floor and language mode.** iOS 17.0, Swift 5 language mode with Swift 6
 toolchain compatibility, no third-party dependencies.
@@ -122,6 +129,28 @@ Ruling: yes. Cost if wrong: raising the floor to iOS 18 unlocks nothing the prot
 build environment. The app target has a manual acceptance checklist in the README rather than
 UI tests, because this environment cannot run Xcode.
 Ruling: yes. Cost if wrong: UI regressions are caught by hand.
+
+**Q17. Wizard and NextAction.** One pure `SessionProgress` value (Foundation, `SymmetryCore`
+and `SymmetryModels` only, no SwiftUI) computes four step states and exactly one next action
+from the existing model; every session-level screen derives its state from it and renders the
+next action as a single "Next: <verb>" button. A per-session "compared" flag lives in
+`UserDefaults` keyed by the session UUID (`compared-<uuid>`); it is UI-only, is absent from
+the report, and is simply orphaned when a session is deleted. `SessionProgress` has its own
+XCTest target in the app project.
+Ruling: yes. Cost if wrong: the wizard is a view over the model, so removing it changes no
+data.
+
+**Q18. Plain-language advice.** Quality failures and reliability flags are shown as one
+sentence naming the problem and what to try ("The photo is blurred. Hold still, let the
+camera focus, then retake."). The raw blur, clipping and roll values are no longer on screen;
+they remain in the exported JSON. The Core `displayText` strings are unchanged and are used
+only in the export.
+Ruling: yes. Cost if wrong: the numbers are one disclosure away in the export, not lost.
+
+**Q19. Button order on the photo check.** The top button is always the recommended action
+and always carries the accent: Retake after a failed check, Use this photo after a pass. The
+second button is the other choice (Keep anyway, or Retake).
+Ruling: yes. Cost if wrong: swap two buttons.
 
 ## Architecture
 
@@ -196,8 +225,10 @@ Plan:
   sentence case: "Retake", "Keep anyway", "Comparison unreliable: landmarks did not align".
 
 Reviewed against the generic default: a stats-first dashboard with cards and a teal
-gradient was the obvious shape and was rejected. Images first, numbers second, no cards,
-no gradients, no all-caps labels.
+gradient was the obvious shape and was rejected. Images first, numbers second, no gradients,
+no all-caps labels. Cards are allowed only as quiet grouping containers with a hairline
+stroke (the step list, one photo set, one guidance note), never as a dashboard of numbers;
+measurements stay folded behind "Show measurements" (Q13).
 
 ## Non-goals and anti-goals
 

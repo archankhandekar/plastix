@@ -56,6 +56,16 @@ sets up the GitHub secrets for TestFlight uploads.
 macOS runners cost ten times the Linux minute rate on private repositories; the app build
 takes a few minutes.
 
+The Linux job also runs `scripts/check-copy.sh`, a copy guard over every string literal in
+`App/SymmetryPrototype`. It fails the build if user-facing text contains a clinical
+judgement (better, worse, improve, normal, abnormal), a physical unit (mm, millimetre), a
+percentage or a literal percent sign that is not a format conversion, or the word score.
+A line that ends in `// copy-guard: allow` is exempt. Run it locally with
+`sh scripts/check-copy.sh` before opening a pull request. The app's own unit tests
+(`App/SymmetryPrototypeTests`, the wizard logic) run from the `SymmetryPrototype` scheme
+with Cmd-U in Xcode or `xcodebuild test -scheme SymmetryPrototype -destination
+'platform=iOS Simulator,name=iPhone 16'`.
+
 `.github/workflows/testflight.yml` is a manual workflow that archives a Release build
 with cloud-managed automatic signing and uploads it to TestFlight. It needs the App Store
 Connect API key secrets and the team and bundle variables that the deploy wizard sets, and
@@ -114,19 +124,23 @@ criterion in the specification.
 
 - [ ] The app launches, shows the research-use notice once, then the session list.
 - [ ] A new session accepts `S-014` and rejects `John Smith` and a 17-character code.
-- [ ] "New capture set" asks for stage and positioning, then opens the rear camera.
+- [ ] "Next: Take the first 3 photos" opens New photo set (stage pre-selected, positioning
+      pre-filled from the last set) and then the rear camera.
+- [ ] The session screen shows the four numbered steps with status lines and exactly one
+      Next button.
 - [ ] The viewfinder shows the three-view checklist (Frontal, Left oblique, Right oblique),
       the midline guide, the level line that follows phone roll, and per-angle guidance.
-- [ ] Capturing shows the image with its quality result; a blurred or tilted shot offers
-      Retake first, Keep anyway second.
+- [ ] Capturing shows the image with one plain sentence per check; a blurred or tilted shot
+      offers Retake first (accent), Keep anyway second; a passed shot offers Use this photo
+      first.
 - [ ] After the third view the capture screen closes and the set appears in the timeline
       with three thumbnails.
-- [ ] "New capture set" is disabled while any set is incomplete; the incomplete set offers
-      "Capture missing".
+- [ ] While a set is incomplete the session screen shows a caution card and the Next button
+      reads "Next: Take the missing photo(s)".
 - [ ] Review lets you swap oblique labels, retake one view, and open the landmark editor.
 - [ ] The landmark editor places six landmarks by tap, moves them by drag with a loupe,
-      draws contours, and shows live metrics with ± values and "Not measured" where
-      landmarks are missing.
+      draws contours, and shows live metrics with ± values, and "Not measured" rows that
+      name the missing points.
 - [ ] Compare shows baseline and current images per angle, the registered overlay, metric
       rows with uncertainties, and flags; oblique sections show only images and the
       descriptive note.
@@ -136,6 +150,7 @@ criterion in the specification.
       and definitions file and offers only the system share sheet.
 - [ ] Settings > Delete all sessions removes every session and image.
 - [ ] With the device in airplane mode every feature works identically.
+- [ ] scripts/check-copy.sh passes.
 
 ## Measurement summary
 

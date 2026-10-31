@@ -12,6 +12,8 @@ jobs:
     container: swift:6.2-noble
     steps:
       - uses: actions/checkout@v4
+      - name: Check user-facing copy
+        run: sh scripts/check-copy.sh
       - name: Run SymmetryCore and SymmetryModels tests
         run: swift test
 
