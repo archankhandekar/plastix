@@ -11,7 +11,11 @@ struct ReviewView: View {
     let sessionID: UUID
     let setID: UUID
 
-    @State private var retakeAngle: ViewAngle?
+    /// Camera target; carries every angle to capture so "Take the missing photos" queues them all.
+    @State private var captureTarget: SessionView.CaptureTarget?
+    /// Capture waiting on the "retake removes points" confirmation.
+    @State private var retakeCandidate: Capture?
+    @State private var confirmRetake = false
     @State private var confirmDelete = false
     @State private var showMeasurements = false
 
@@ -27,7 +31,7 @@ struct ReviewView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.m) {
                     headerCard(set: set, status: status)
                     ForEach(ViewAngle.allCases) { angle in
-                        viewCard(angle: angle, set: set, session: session)
+                        viewCard(angle: angle, set: set, session: session, index: status.index)
                         if angle == .frontal {
                             measurementsCard(set: set)
                         }
@@ -41,8 +45,16 @@ struct ReviewView: View {
             .background(Theme.Colors.paper)
             .navigationTitle("Set \(status.index)")
             .navigationBarTitleDisplayMode(.inline)
-            .fullScreenCover(item: $retakeAngle) { angle in
-                CaptureView(sessionID: sessionID, captureSet: set, setIndex: status.index, anglesToCapture: [angle])
+            .fullScreenCover(item: $captureTarget) { target in
+                CaptureView(sessionID: sessionID, captureSet: target.set, setIndex: target.index, anglesToCapture: target.angles)
+            }
+            .confirmationDialog(retakeCandidate.map(retakeWarning) ?? "",
+                                isPresented: $confirmRetake, titleVisibility: .visible) {
+                Button("Retake and remove points", role: .destructive) {
+                    if let candidate = retakeCandidate { openCamera(for: [candidate.angle], set: set, index: status.index) }
+                    retakeCandidate = nil
+                }
+                Button("Keep this photo", role: .cancel) { retakeCandidate = nil }
             }
             .confirmationDialog("Delete this photo set and its three photos?",
                                 isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -69,7 +81,7 @@ struct ReviewView: View {
             if let next = status.nextAction {
                 switch next {
                 case .captureMissing(_, _, let angles, let title, _):
-                    Button(title) { retakeAngle = angles.first }
+                    Button(title) { openCamera(for: angles, set: set, index: status.index) }
                         .buttonStyle(PrimaryButtonStyle())
                 case .markPoints(_, _, let capture, let title, _):
                     NavigationLink {
@@ -86,7 +98,7 @@ struct ReviewView: View {
         .cardStyle()
     }
 
-    private func viewCard(angle: ViewAngle, set: CaptureSet, session: StudySession) -> some View {
+    private func viewCard(angle: ViewAngle, set: CaptureSet, session: StudySession, index: Int) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             Text(heading(for: angle))
                 .font(.stepTitle)
@@ -123,13 +135,13 @@ struct ReviewView: View {
                     Text(capture.landmarks == nil ? "Mark points" : "Edit points")
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                Button("Retake this photo") { retakeAngle = angle }
+                Button("Retake this photo") { requestRetake(of: capture, set: set, index: index) }
                     .buttonStyle(SecondaryButtonStyle())
             } else {
                 Text("Not taken yet")
                     .font(.body)
                     .foregroundStyle(Theme.Colors.ink)
-                Button("Take this photo") { retakeAngle = angle }
+                Button("Take this photo") { openCamera(for: [angle], set: set, index: index) }
                     .buttonStyle(PrimaryButtonStyle())
             }
         }
@@ -202,7 +214,41 @@ struct ReviewView: View {
         return capture.angle == .frontal ? "Points: not yet marked" : "Points optional on this view"
     }
 
+    /// Dialog title shown before a retake that would remove marked points or outlines.
+    private func retakeWarning(for capture: Capture) -> String {
+        let marked = SessionProgress.pointsMarked(on: capture)
+        let points = marked == 1 ? "the point" : "the \(marked) points"
+        let what: String
+        if marked > 0 && hasContours(capture) {
+            what = "\(points) and the outlines"
+        } else if marked > 0 {
+            what = points
+        } else {
+            what = "the outlines"
+        }
+        return "Retaking this photo removes \(what) marked on it. You will need to mark again."
+    }
+
+    private func hasContours(_ capture: Capture) -> Bool {
+        guard let landmarks = capture.landmarks else { return false }
+        return !landmarks.leftContour.isEmpty || !landmarks.rightContour.isEmpty
+    }
+
     // MARK: - Actions
+
+    private func openCamera(for angles: [ViewAngle], set: CaptureSet, index: Int) {
+        captureTarget = SessionView.CaptureTarget(set: set, index: index, angles: angles)
+    }
+
+    /// Asks first when the photo has any points or outlines, since a new photo replaces them.
+    private func requestRetake(of capture: Capture, set: CaptureSet, index: Int) {
+        if SessionProgress.pointsMarked(on: capture) > 0 || hasContours(capture) {
+            retakeCandidate = capture
+            confirmRetake = true
+        } else {
+            openCamera(for: [capture.angle], set: set, index: index)
+        }
+    }
 
     private func swapObliques(_ set: CaptureSet, in session: StudySession) {
         var s = session
