@@ -5,6 +5,13 @@ import SymmetryCore
 /// what to try. The raw check values stay in the exported JSON, never on screen.
 enum QualityAdvice {
     static let passed = "Passed the checks: sharp, well lit and level."
+    /// Shown instead of `passed` when the phone gave no tilt reading (pointing down, or no
+    /// motion data), so the level check never ran.
+    static let passedNoTilt = "Passed the checks: sharp and well lit. Tilt was not checked."
+
+    static func passedText(_ report: QualityReport) -> String {
+        report.tiltDegrees == nil ? passedNoTilt : passed
+    }
     static let kept = "Kept with this warning. It stays attached to every comparison that uses this photo."
     static let notChecked = "Quality not checked for this photo."
 
@@ -26,10 +33,10 @@ enum QualityAdvice {
         }
     }
 
-    /// "Passed the checks" | "Has a warning: blurred, tilted" | "Not checked".
+    /// "Passed the checks" | "Passed the checks, tilt not checked" | "Has a warning: blurred, tilted" | "Not checked".
     static func headline(report: QualityReport?, overridden: Bool) -> String {
         guard let report else { return "Not checked" }
-        if report.passed { return "Passed the checks" }
+        if report.passed { return report.tiltDegrees == nil ? "Passed the checks, tilt not checked" : "Passed the checks" }
         return "Has a warning: " + report.failures.map(shortLabel).joined(separator: ", ")
     }
 }
@@ -66,7 +73,7 @@ struct QualityAdviceList: View {
             if let report {
                 if report.passed {
                     if showsPassLine {
-                        Label(QualityAdvice.passed, systemImage: "checkmark.circle")
+                        Label(QualityAdvice.passedText(report), systemImage: "checkmark.circle")
                             .foregroundStyle(Theme.Colors.accent)
                     }
                 } else {

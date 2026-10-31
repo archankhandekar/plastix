@@ -53,8 +53,21 @@ struct CaptureView: View {
     }
 
     private var matchPoseTitle: String {
-        guard hasPriorCapture else { return "Match pose (needs an earlier set)" }
+        guard hasPriorCapture else { return "Match pose" }
         return settings.ghostOverlayEnabled ? "Match pose: On" : "Match pose: Off"
+    }
+
+    private var matchPoseHint: String {
+        hasPriorCapture ? "Shows the earlier photo of this view faintly in the camera"
+                        : "Needs a photo of this view from an earlier set"
+    }
+
+    /// True when the last photo in this queue leads to marking the frontal: the frontal is
+    /// being taken now, or it is already in the set without its 6 points.
+    private var frontalNeedsPoints: Bool {
+        if queue.contains(.frontal) { return true }
+        guard let frontal = captureSet.frontal else { return false }
+        return frontal.landmarks?.isComplete != true
     }
 
     private var isNotAuthorized: Bool {
@@ -112,6 +125,7 @@ struct CaptureView: View {
             CaptureReviewSheet(pending: p,
                                photoNumber: photoNumber(for: p.angle),
                                nextAngle: queue.dropFirst().first,
+                               frontalNeedsPoints: frontalNeedsPoints,
                                onRetake: { pending = nil },
                                onKeep: { overridden in keep(p, overridden: overridden) })
                 .interactiveDismissDisabled()
@@ -158,6 +172,8 @@ struct CaptureView: View {
                 .padding(.horizontal, Theme.Spacing.xs)
                 .frame(maxWidth: .infinity)
                 .background(isCurrent ? Color.white.opacity(0.12) : .clear, in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(done ? "taken" : (isCurrent ? "next" : "not taken"))
             }
         }
         .padding(.horizontal, Theme.Spacing.m)
@@ -167,7 +183,6 @@ struct CaptureView: View {
         HStack(alignment: .center, spacing: Theme.Spacing.s) {
             Button("Stop") { confirmStop = true }
                 .buttonStyle(OutlinedCaptureButtonStyle())
-                .frame(width: 96)
             Spacer(minLength: Theme.Spacing.s)
             Button(action: capture) {
                 ZStack {
@@ -181,9 +196,8 @@ struct CaptureView: View {
             Button(matchPoseTitle) { settings.ghostOverlayEnabled.toggle() }
                 .buttonStyle(OutlinedCaptureButtonStyle())
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 150)
                 .disabled(!hasPriorCapture)
-                .accessibilityHint("Shows the earlier photo of this view faintly in the camera")
+                .accessibilityHint(matchPoseHint)
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Theme.Spacing.l)
@@ -251,14 +265,19 @@ struct CaptureReviewSheet: View {
     let photoNumber: Int
     /// The angle that comes next in the queue, or nil when this is the last photo.
     let nextAngle: ViewAngle?
+    /// True when the frontal photo still needs its 6 points after this queue, so the
+    /// last-photo footer says what really comes next.
+    let frontalNeedsPoints: Bool
     let onRetake: () -> Void
     let onKeep: (Bool) -> Void
 
     init(pending: CaptureView.PendingCapture, photoNumber: Int, nextAngle: ViewAngle?,
+         frontalNeedsPoints: Bool = true,
          onRetake: @escaping () -> Void, onKeep: @escaping (Bool) -> Void) {
         self.pending = pending
         self.photoNumber = photoNumber
         self.nextAngle = nextAngle
+        self.frontalNeedsPoints = frontalNeedsPoints
         self.onRetake = onRetake
         self.onKeep = onKeep
     }
@@ -266,8 +285,10 @@ struct CaptureReviewSheet: View {
     private var passed: Bool { pending.processed.quality.passed }
 
     private var footer: String {
-        nextAngle.map { "After this: \($0.displayName)" }
-            ?? "After this the camera closes and you mark 6 points on the frontal photo."
+        if let nextAngle { return "After this: \(nextAngle.displayName)" }
+        return frontalNeedsPoints
+            ? "After this the camera closes and you mark 6 points on the frontal photo."
+            : "After this the camera closes and you return to the set."
     }
 
     var body: some View {
