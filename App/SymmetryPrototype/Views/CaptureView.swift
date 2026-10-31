@@ -3,13 +3,17 @@ import SymmetryCore
 import SymmetryModels
 import UIKit
 
-/// Full-screen viewfinder with the three-view checklist, guides, quality gate and retake.
+/// Full-screen viewfinder for Screen 5: "Photo N of 3" header, the three-view checklist,
+/// guides, the quality gate and retake. Capture logic (queue, save after every photo,
+/// ghost lookup, processing and thresholds) is unchanged from the first prototype.
 struct CaptureView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
 
     let sessionID: UUID
+    /// 1-based position of this set in the session, for "Set N · <stage>".
+    let setIndex: Int
     @State private var captureSet: CaptureSet
     @State private var queue: [ViewAngle]
 
@@ -18,6 +22,7 @@ struct CaptureView: View {
     @State private var pending: PendingCapture?
     @State private var isCapturing = false
     @State private var errorMessage: String?
+    @State private var confirmStop = false
 
     struct PendingCapture: Identifiable {
         let id = UUID()
@@ -26,13 +31,35 @@ struct CaptureView: View {
         let tilt: Double?
     }
 
-    init(sessionID: UUID, captureSet: CaptureSet, anglesToCapture: [ViewAngle]) {
+    init(sessionID: UUID, captureSet: CaptureSet, setIndex: Int, anglesToCapture: [ViewAngle]) {
         self.sessionID = sessionID
+        self.setIndex = setIndex
         _captureSet = State(initialValue: captureSet)
         _queue = State(initialValue: anglesToCapture)
     }
 
     private var current: ViewAngle? { queue.first }
+
+    /// "Photo 1 of 3" counts along the fixed order Frontal, Left oblique, Right oblique.
+    private func photoNumber(for angle: ViewAngle) -> Int {
+        ViewAngle.allCases.firstIndex(of: angle)! + 1
+    }
+
+    /// True when another set in this session already holds a photo of the current angle,
+    /// so there is an earlier photo to match the pose against.
+    private var hasPriorCapture: Bool {
+        guard let angle = current, let session = store.session(id: sessionID) else { return false }
+        return session.orderedCaptureSets.contains { $0.id != captureSet.id && $0.captures[angle] != nil }
+    }
+
+    private var matchPoseTitle: String {
+        guard hasPriorCapture else { return "Match pose (needs an earlier set)" }
+        return settings.ghostOverlayEnabled ? "Match pose: On" : "Match pose: Off"
+    }
+
+    private var isNotAuthorized: Bool {
+        errorMessage == CameraService.CameraError.notAuthorized.errorDescription
+    }
 
     /// The most recent capture of the current angle from another set in this session.
     private var ghostImage: UIImage? {
@@ -46,18 +73,31 @@ struct CaptureView: View {
         ZStack {
             Theme.Colors.capture.ignoresSafeArea()
             VStack(spacing: Theme.Spacing.s) {
+                header
                 checklist
                 ZStack {
                     CameraPreviewView(session: camera.session)
                     if let angle = current {
-                        GuideOverlayView(angle: angle, rollDegrees: motion.rollDegrees, pitchDegrees: motion.pitchDegrees,
+                        GuideOverlayView(angle: angle, rollDegrees: motion.rollDegrees,
                                          maxTiltDegrees: settings.maxTiltDegrees, ghost: ghostImage)
                     }
-                    if let errorMessage {
-                        Text(errorMessage)
+                    if !camera.isRunning && camera.errorMessage == nil {
+                        Text("Starting camera…")
+                            .font(.body)
                             .foregroundStyle(.white)
-                            .padding()
-                            .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                    }
+                    if let errorMessage {
+                        GuidanceCard(kind: .dark,
+                                     title: isNotAuthorized ? "Camera is off" : "Camera problem",
+                                     body: errorMessage) {
+                            if isNotAuthorized {
+                                Button("Open Settings") {
+                                    UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!)
+                                }
+                                .buttonStyle(PrimaryButtonStyle())
+                            }
+                        }
+                        .padding(Theme.Spacing.m)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -69,9 +109,36 @@ struct CaptureView: View {
         .onDisappear { camera.stop(); motion.stop() }
         .onReceive(camera.$errorMessage) { if let m = $0 { errorMessage = m } }
         .sheet(item: $pending) { p in
-            CaptureReviewSheet(pending: p, onRetake: { pending = nil }, onKeep: { overridden in keep(p, overridden: overridden) })
+            CaptureReviewSheet(pending: p,
+                               photoNumber: photoNumber(for: p.angle),
+                               nextAngle: queue.dropFirst().first,
+                               onRetake: { pending = nil },
+                               onKeep: { overridden in keep(p, overridden: overridden) })
                 .interactiveDismissDisabled()
         }
+        .confirmationDialog("Stop taking photos? The photos you have kept are saved. You can take the rest later from the session screen.",
+                            isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("Stop", role: .destructive) { dismiss() }
+            Button("Keep going", role: .cancel) {}
+        }
+    }
+
+    /// "Photo 1 of 3 · Frontal" over "Set 1 · Preoperative marking".
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            if let angle = current {
+                Text("Photo \(photoNumber(for: angle)) of 3 · \(angle.displayName)")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+            Text("Set \(setIndex) · \(captureSet.stage.label)")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.8))
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Spacing.l)
+        .padding(.top, Theme.Spacing.s)
     }
 
     private var checklist: some View {
@@ -81,25 +148,27 @@ struct CaptureView: View {
                 let isCurrent = angle == current
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: done ? "checkmark.circle.fill" : (isCurrent ? "camera.fill" : "circle"))
-                    Text(angle.displayName).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(angle.displayName)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.footnote.weight(isCurrent ? .semibold : .regular))
-                .foregroundStyle(done ? Theme.Colors.guide : (isCurrent ? .white : .white.opacity(0.6)))
+                .font(.subheadline.weight(isCurrent ? .semibold : .regular))
+                .foregroundStyle(done ? Theme.Colors.guide : (isCurrent ? .white : .white.opacity(0.75)))
                 .padding(.vertical, Theme.Spacing.s)
+                .padding(.horizontal, Theme.Spacing.xs)
                 .frame(maxWidth: .infinity)
                 .background(isCurrent ? Color.white.opacity(0.12) : .clear, in: Capsule())
             }
         }
         .padding(.horizontal, Theme.Spacing.m)
-        .padding(.top, Theme.Spacing.s)
     }
 
     private var controls: some View {
-        HStack {
-            Button("Cancel") { dismiss() }
-                .foregroundStyle(.white)
-                .frame(width: 80, height: Theme.tapTarget)
-            Spacer()
+        HStack(alignment: .center, spacing: Theme.Spacing.s) {
+            Button("Stop") { confirmStop = true }
+                .buttonStyle(OutlinedCaptureButtonStyle())
+                .frame(width: 96)
+            Spacer(minLength: Theme.Spacing.s)
             Button(action: capture) {
                 ZStack {
                     Circle().stroke(.white, lineWidth: 4).frame(width: 78, height: 78)
@@ -108,13 +177,15 @@ struct CaptureView: View {
             }
             .disabled(isCapturing || current == nil || !camera.isRunning)
             .accessibilityLabel("Capture \(current?.displayName ?? "")")
-            Spacer()
-            Toggle(isOn: $settings.ghostOverlayEnabled) { Image(systemName: "person.crop.rectangle") }
-                .toggleStyle(.button)
-                .tint(Theme.Colors.guide)
-                .frame(width: 80, height: Theme.tapTarget)
-                .accessibilityLabel("Ghost overlay of the prior capture")
+            Spacer(minLength: Theme.Spacing.s)
+            Button(matchPoseTitle) { settings.ghostOverlayEnabled.toggle() }
+                .buttonStyle(OutlinedCaptureButtonStyle())
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 150)
+                .disabled(!hasPriorCapture)
+                .accessibilityHint("Shows the earlier photo of this view faintly in the camera")
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, Theme.Spacing.l)
         .padding(.bottom, Theme.Spacing.m)
     }
@@ -173,36 +244,67 @@ struct CaptureView: View {
     }
 }
 
-/// Shows the captured image with its quality result and the keep or retake choice.
+/// Screen 6: the captured photo with its quality advice and the keep or retake choice.
+/// The top button is always the recommended action (Retake first on a failed shot).
 struct CaptureReviewSheet: View {
     let pending: CaptureView.PendingCapture
+    let photoNumber: Int
+    /// The angle that comes next in the queue, or nil when this is the last photo.
+    let nextAngle: ViewAngle?
     let onRetake: () -> Void
     let onKeep: (Bool) -> Void
 
+    init(pending: CaptureView.PendingCapture, photoNumber: Int, nextAngle: ViewAngle?,
+         onRetake: @escaping () -> Void, onKeep: @escaping (Bool) -> Void) {
+        self.pending = pending
+        self.photoNumber = photoNumber
+        self.nextAngle = nextAngle
+        self.onRetake = onRetake
+        self.onKeep = onKeep
+    }
+
     private var passed: Bool { pending.processed.quality.passed }
 
+    private var footer: String {
+        nextAngle.map { "After this: \($0.displayName)" }
+            ?? "After this the camera closes and you mark 6 points on the frontal photo."
+    }
+
     var body: some View {
-        VStack(spacing: Theme.Spacing.m) {
-            Text(pending.angle.displayName).font(.headline)
-            if let image = UIImage(data: pending.processed.jpeg) {
-                Image(uiImage: image).resizable().scaledToFit()
-                    .frame(maxHeight: 420)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                Text("Photo \(photoNumber) of 3: \(pending.angle.displayName)")
+                    .font(.stepTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                Text("Check it, then keep it or retake it.")
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                if let image = UIImage(data: pending.processed.jpeg) {
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                }
+                QualityAdviceList(report: pending.processed.quality, overridden: false)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if passed {
+                    Button("Use this photo") { onKeep(false) }.buttonStyle(PrimaryButtonStyle())
+                    Button("Retake", action: onRetake).buttonStyle(SecondaryButtonStyle())
+                } else {
+                    Button("Retake", action: onRetake).buttonStyle(PrimaryButtonStyle())
+                    Button("Keep anyway") { onKeep(true) }.buttonStyle(SecondaryButtonStyle())
+                    Text("If you keep it, this warning stays attached to every comparison that uses this photo.")
+                        .font(.body)
+                        .foregroundStyle(Theme.Colors.caution)
+                }
+                Text(footer)
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.ink)
             }
-            QualityFailureList(report: pending.processed.quality, overridden: false)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 0)
-            if passed {
-                Button("Use photo") { onKeep(false) }.buttonStyle(PrimaryButtonStyle())
-                Button("Retake", action: onRetake).buttonStyle(SecondaryButtonStyle())
-            } else {
-                Button("Retake", action: onRetake).buttonStyle(PrimaryButtonStyle())
-                Button("Keep anyway") { onKeep(true) }.buttonStyle(SecondaryButtonStyle())
-                Text("Kept images carry the warning into every comparison that uses them.")
-                    .font(.footnote).foregroundStyle(Theme.Colors.slate)
-            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Theme.Spacing.l)
         }
-        .padding(Theme.Spacing.l)
+        .scrollBounceBehavior(.basedOnSize)
         .background(Theme.Colors.paper)
     }
 }
