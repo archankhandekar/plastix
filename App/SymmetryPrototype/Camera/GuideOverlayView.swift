@@ -4,11 +4,10 @@ import UIKit
 
 /// Alignment guides drawn over the live preview: the patient midline, a level line that
 /// rotates with the phone's roll, the current angle's guidance, and an optional ghost of
-/// the matching prior capture.
+/// the matching prior capture. The level readout is words only; no degree value is shown.
 struct GuideOverlayView: View {
     let angle: ViewAngle
     let rollDegrees: Double?
-    let pitchDegrees: Double?
     let maxTiltDegrees: Double
     let ghost: UIImage?
 
@@ -50,9 +49,10 @@ struct GuideOverlayView: View {
 
                 VStack {
                     Text(angle.guidanceText)
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, Theme.Spacing.m)
                         .padding(.vertical, Theme.Spacing.s)
                         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
@@ -67,21 +67,32 @@ struct GuideOverlayView: View {
         .allowsHitTesting(false)
     }
 
+    // MARK: - Level readout
+
+    private var readoutText: String {
+        guard rollDegrees != nil else { return "Phone is pointing down, tilt is not checked" }
+        return isLevel ? "Level, press the shutter" : "Tilt the phone until the line turns teal"
+    }
+
+    private var readoutSymbol: String {
+        guard rollDegrees != nil else { return "arrow.down.circle" }
+        return isLevel ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+
+    private var readoutColor: Color {
+        guard rollDegrees != nil else { return .white }
+        return isLevel ? Theme.Colors.guide : Theme.Colors.caution
+    }
+
     private var levelReadout: some View {
         HStack(spacing: Theme.Spacing.s) {
-            if let roll = rollDegrees {
-                Image(systemName: isLevel ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                Text(isLevel ? "Level" : "Roll \(roll, specifier: "%.0f")°")
-            } else {
-                Image(systemName: "arrow.down.circle")
-                Text("Pointing down. Roll not measurable.")
-            }
-            if let pitch = pitchDegrees {
-                Text("Pitch \(pitch, specifier: "%.0f")°").foregroundStyle(.white.opacity(0.7))
-            }
+            Image(systemName: readoutSymbol)
+            Text(readoutText)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.footnote.monospacedDigit())
-        .foregroundStyle(isLevel || rollDegrees == nil ? Theme.Colors.guide : Theme.Colors.caution)
+        .font(.subheadline)
+        .foregroundStyle(readoutColor)
         .padding(.horizontal, Theme.Spacing.m)
         .padding(.vertical, Theme.Spacing.s)
         .background(.black.opacity(0.55), in: Capsule())
