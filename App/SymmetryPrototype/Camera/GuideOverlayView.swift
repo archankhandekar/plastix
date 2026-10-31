@@ -16,6 +16,13 @@ struct GuideOverlayView: View {
         return abs(roll) <= maxTiltDegrees
     }
 
+    /// The viewfinder is always dark, so the caution colour is the dark-appearance value
+    /// regardless of the phone's appearance setting (Theme.Colors.caution would turn to the
+    /// light-appearance amber and lose contrast over the live preview).
+    private let caution = Color(hex: 0xE0A04A)
+    /// Scrim behind the readouts so they do not depend on what the camera sees.
+    private let scrim = Color.black.opacity(0.75)
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -41,7 +48,7 @@ struct GuideOverlayView: View {
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
                 if let roll = rollDegrees {
                     Rectangle()
-                        .fill(isLevel ? Theme.Colors.guide : Theme.Colors.caution)
+                        .fill(isLevel ? Theme.Colors.guide : caution)
                         .frame(width: geo.size.width * 0.6, height: 2)
                         .rotationEffect(.degrees(-roll))
                         .position(x: geo.size.width / 2, y: geo.size.height / 2)
@@ -55,7 +62,7 @@ struct GuideOverlayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, Theme.Spacing.m)
                         .padding(.vertical, Theme.Spacing.s)
-                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                        .background(scrim, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
                         .padding(.top, Theme.Spacing.m)
                     Spacer()
                     levelReadout
@@ -81,7 +88,7 @@ struct GuideOverlayView: View {
 
     private var readoutColor: Color {
         guard rollDegrees != nil else { return .white }
-        return isLevel ? Theme.Colors.guide : Theme.Colors.caution
+        return isLevel ? Theme.Colors.guide : caution
     }
 
     private var levelReadout: some View {
@@ -95,6 +102,6 @@ struct GuideOverlayView: View {
         .foregroundStyle(readoutColor)
         .padding(.horizontal, Theme.Spacing.m)
         .padding(.vertical, Theme.Spacing.s)
-        .background(.black.opacity(0.55), in: Capsule())
+        .background(scrim, in: Capsule())
     }
 }
