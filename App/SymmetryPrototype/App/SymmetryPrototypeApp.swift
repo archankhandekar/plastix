@@ -16,12 +16,16 @@ struct SymmetryPrototypeApp: App {
 }
 
 /// Shows the research-use notice once, then the session list.
+///
+/// The navigation path lives here so the session list can push a freshly created
+/// session after its sheet has dismissed.
 struct RootView: View {
     @EnvironmentObject private var settings: AppSettings
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
-            SessionListView()
+        NavigationStack(path: $path) {
+            SessionListView(path: $path)
         }
         .fullScreenCover(isPresented: .init(get: { !settings.researchNoticeAccepted }, set: { _ in })) {
             ResearchNoticeView()

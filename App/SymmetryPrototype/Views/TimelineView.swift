@@ -2,83 +2,187 @@ import SwiftUI
 import SymmetryCore
 import SymmetryModels
 
-/// Ordered capture sets with stage labels, thumbnails and completeness.
+/// The session's photo sets in order, one `CaptureSetCard` each. A thin `ForEach`; the
+/// caller provides the section heading and the empty state.
 struct TimelineView: View {
-    @EnvironmentObject private var store: SessionStore
     let session: StudySession
-    let onCaptureMissing: (CaptureSet, [ViewAngle]) -> Void
+    let sigma: Double
+    let onCaptureMissing: (CaptureSet, Int, [ViewAngle]) -> Void
+    let onMarkPoints: (CaptureSet, Int, Capture) -> Void
 
     var body: some View {
-        if session.captureSets.isEmpty {
-            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-                Text("No capture sets yet").font(.headline)
-                Text("Each set is three views at one operative stage.").foregroundStyle(Theme.Colors.slate)
-            }
-            .padding(.vertical, Theme.Spacing.s)
+        ForEach(Array(session.orderedCaptureSets.enumerated()), id: \.element.id) { offset, set in
+            let index = offset + 1
+            CaptureSetCard(session: session,
+                           set: set,
+                           status: CaptureSetStatus(set: set, index: index, sigma: sigma),
+                           sigma: sigma,
+                           onCaptureMissing: onCaptureMissing,
+                           onMarkPoints: onMarkPoints)
         }
-        ForEach(Array(session.orderedCaptureSets.enumerated()), id: \.element.id) { index, set in
-            NavigationLink { ReviewView(sessionID: session.id, setID: set.id) } label: {
-                VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("\(index + 1). \(set.stage.label)").font(.headline)
-                        Spacer()
-                        Text(set.createdAt.formatted(date: .omitted, time: .shortened))
-                            .font(.footnote).foregroundStyle(Theme.Colors.slate)
+    }
+}
+
+/// Screen 7: one photo set. Only the header navigates (to the set screen); the per-set
+/// action button and the measurements disclosure sit outside that link.
+struct CaptureSetCard: View {
+    @EnvironmentObject private var store: SessionStore
+    let session: StudySession
+    let set: CaptureSet
+    let status: CaptureSetStatus
+    let sigma: Double
+    let onCaptureMissing: (CaptureSet, Int, [ViewAngle]) -> Void
+    let onMarkPoints: (CaptureSet, Int, Capture) -> Void
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            NavigationLink {
+                ReviewView(sessionID: session.id, setID: set.id)
+            } label: {
+                HStack(alignment: .center, spacing: Theme.Spacing.s) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text(status.title)
+                            .font(.stepTitle)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(set.createdAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.Colors.slate)
                     }
-                    Text(set.positioning.summary).font(.footnote).foregroundStyle(Theme.Colors.slate)
-                    HStack(spacing: Theme.Spacing.s) {
-                        ForEach(ViewAngle.allCases) { angle in
-                            Thumbnail(image: set.captures[angle].flatMap { store.image(for: $0, in: session) },
-                                      label: angle.displayName,
-                                      flagged: set.captures[angle].map { !($0.quality?.passed ?? true) } ?? false,
-                                      hasLandmarks: set.captures[angle]?.landmarks != nil)
-                        }
-                    }
-                    if !set.isComplete {
-                        Button {
-                            onCaptureMissing(set, set.missingAngles)
-                        } label: {
-                            Label("Capture missing: \(set.missingAngles.map(\.displayName).joined(separator: ", "))", systemImage: "camera.badge.ellipsis")
-                        }
-                        .font(.footnote)
-                        .foregroundStyle(Theme.Colors.caution)
-                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.body)
+                        .foregroundStyle(Theme.Colors.slate)
                 }
-                .padding(.vertical, Theme.Spacing.xs)
+                .tapTarget()
             }
+            .buttonStyle(.plain)
+
+            Text(status.line)
+                .font(.body)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .top, spacing: Theme.Spacing.m) {
+                ForEach(ViewAngle.allCases) { angle in
+                    let capture = set.captures[angle]
+                    Thumbnail(image: capture.flatMap { store.image(for: $0, in: session) },
+                              label: angle.displayName,
+                              badges: badges(for: capture))
+                }
+            }
+
+            if let action = status.nextAction {
+                switch action {
+                case .captureMissing(_, _, let angles, let title, _):
+                    Button(title) { onCaptureMissing(set, status.index, angles) }
+                        .buttonStyle(PrimaryButtonStyle())
+                case .markPoints(_, _, let capture, let title, _):
+                    Button(title) { onMarkPoints(set, status.index, capture) }
+                        .buttonStyle(SecondaryButtonStyle())
+                default:
+                    EmptyView()
+                }
+            }
+
+            if let frontal = set.frontal,
+               let landmarks = frontal.landmarks,
+               landmarks.isComplete,
+               let metrics = frontal.frontalMetrics(sigma: sigma) {
+                measurements(metrics: metrics, landmarks: landmarks)
+            }
+        }
+        .cardStyle()
+    }
+
+    // MARK: - Pieces
+
+    /// "Warning" when the quality check ran and failed, "Not checked" when it never ran,
+    /// "Marked" when all six points are placed. Nothing for a missing photo.
+    private func badges(for capture: Capture?) -> [String] {
+        guard let capture else { return [] }
+        var result: [String] = []
+        if let quality = capture.quality {
+            if !quality.passed { result.append("Warning") }
+        } else {
+            result.append("Not checked")
+        }
+        if capture.landmarks?.isComplete == true { result.append("Marked") }
+        return result
+    }
+
+    private func measurements(metrics: FrontalMetrics, landmarks: LandmarkSet) -> some View {
+        let hasContours = !landmarks.leftContour.isEmpty && !landmarks.rightContour.isEmpty
+        return DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(metrics.namedMetrics.enumerated()), id: \.offset) { _, metric in
+                    MetricRow(name: metric.name,
+                              measurement: metric.measurement,
+                              explanation: MetricGlossary.meaning(for: metric.name),
+                              reason: MetricGlossary.reason(flags: metrics.flags,
+                                                            missing: landmarks.missing,
+                                                            hasContours: hasContours,
+                                                            metricName: metric.name))
+                }
+            }
+            .padding(.top, Theme.Spacing.s)
+        } label: {
+            Text(isExpanded ? "Hide measurements" : "Show measurements")
+                .font(.body)
+                .foregroundStyle(Theme.Colors.ink)
+                .tapTarget()
         }
     }
 
+    /// 88x116 photo with its caption and text badges; "Not taken" when there is no photo.
     struct Thumbnail: View {
         let image: UIImage?
         let label: String
-        let flagged: Bool
-        let hasLandmarks: Bool
+        let badges: [String]
 
         var body: some View {
-            VStack(spacing: 2) {
-                ZStack(alignment: .topTrailing) {
-                    Group {
-                        if let image {
-                            Image(uiImage: image).resizable().scaledToFill()
-                        } else {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Group {
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        ZStack {
                             Theme.Colors.hairline
+                            Text("Not taken")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.Colors.slate)
+                                .multilineTextAlignment(.center)
                         }
                     }
-                    .frame(width: 64, height: 84)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    if flagged {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption2).foregroundStyle(Theme.Colors.caution).padding(3)
-                    }
-                    if hasLandmarks {
-                        Image(systemName: "scope")
-                            .font(.caption2).foregroundStyle(Theme.Colors.accent).padding(3)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    }
                 }
-                .frame(width: 64, height: 84)
-                Text(label).font(.caption2).foregroundStyle(Theme.Colors.slate).lineLimit(1)
+                .frame(width: 88, height: 116)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(badges, id: \.self) { badge in
+                    Text(badge)
+                        .font(.subheadline)
+                        .foregroundStyle(color(for: badge))
+                        .padding(.horizontal, Theme.Spacing.s)
+                        .padding(.vertical, 2)
+                        .overlay(Capsule().stroke(color(for: badge), lineWidth: 1))
+                }
+            }
+            .frame(width: 88, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+
+        private func color(for badge: String) -> Color {
+            switch badge {
+            case "Warning": return Theme.Colors.caution
+            case "Marked": return Theme.Colors.accent
+            default: return Theme.Colors.slate
             }
         }
     }
