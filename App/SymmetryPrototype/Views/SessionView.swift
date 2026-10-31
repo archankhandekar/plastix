@@ -17,10 +17,12 @@ enum SessionRoute: Hashable, Identifiable {
 struct SessionView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
     let sessionID: UUID
 
     @State private var route: SessionRoute?
     @State private var hasCompared = false
+    @State private var confirmDelete = false
     @State private var showingNewSet = false
     @State private var newSetContext: NewSetContext?
     @State private var pendingSet: CaptureSet?
@@ -100,12 +102,18 @@ struct SessionView: View {
                         .buttonStyle(SecondaryButtonStyle())
                     }
 
+                    deleteCard
                     ResearchNoticeBanner()
                 }
                 .padding(Theme.Spacing.l)
             }
             .background(Theme.Colors.paper)
             .navigationTitle(session.studyID)
+            .confirmationDialog("Delete this session and all of its images?",
+                                isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete session", role: .destructive) { delete(session) }
+                Button("Cancel", role: .cancel) {}
+            }
             .navigationDestination(item: $route) { route in
                 destination(for: route)
             }
@@ -145,6 +153,20 @@ struct SessionView: View {
         } else {
             ContentUnavailableView("Session not found", systemImage: "questionmark.folder")
         }
+    }
+
+    /// The visible way to remove one session. The Sessions list keeps its long press as a shortcut.
+    private var deleteCard: some View {
+        Button("Delete this session") { confirmDelete = true }
+            .buttonStyle(PrimaryButtonStyle(isDestructive: true))
+            .cardStyle()
+    }
+
+    /// Deletes the session and returns to the Sessions list. On a storage failure the
+    /// store keeps the session and reports the problem, so this screen stays put.
+    private func delete(_ session: StudySession) {
+        store.delete(session)
+        if store.session(id: sessionID) == nil { dismiss() }
     }
 
     // MARK: - Navigation

@@ -52,7 +52,19 @@ struct ExportView: View {
     private func summaryCard(session: StudySession, report: ResearchReport, progress: SessionProgress) -> some View {
         let sets = report.captureSets.count
         let measured = progress.measuredSets.count
-        let comparisons = report.comparisons.count
+        // The headline counts only comparisons between two measured sets, so it agrees with
+        // the measured count and with the session screen. Comparisons that involve a set
+        // without a measured frontal photo are still in the report, with blanks.
+        let measuredIDs = Set(progress.measuredSets.map(\.id))
+        let blankComparisons = report.comparisons.filter {
+            !measuredIDs.contains($0.baselineSetID) || !measuredIDs.contains($0.currentSetID)
+        }
+        let comparisons = report.comparisons.count - blankComparisons.count
+        let orderedIDs = session.orderedCaptureSets.map(\.id)
+        let unmeasuredIndices = Set(blankComparisons
+            .flatMap { [$0.baselineSetID, $0.currentSetID] }
+            .filter { !measuredIDs.contains($0) }
+            .compactMap { id in orderedIDs.firstIndex(of: id).map { $0 + 1 } }).sorted()
         let sigma = settings.landmarkSigmaRatio
         let gapLines = session.orderedCaptureSets.enumerated().flatMap { offset, set in
             CaptureSetStatus(set: set, index: offset + 1, sigma: sigma).gapLines
@@ -62,6 +74,12 @@ struct ExportView: View {
                 .font(.body)
                 .foregroundStyle(Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
+            if !blankComparisons.isEmpty {
+                Text(blankComparisonsLine(count: blankComparisons.count, setIndices: unmeasuredIndices))
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.caution)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if progress.measuredSets.isEmpty {
                 GuidanceCard(kind: .caution,
                              body: "This session has no measured set yet. You can still export, but the report will hold no measurements.")
@@ -78,6 +96,20 @@ struct ExportView: View {
             }
         }
         .cardStyle()
+    }
+
+    /// "1 comparison has blanks because set 3 is not measured." /
+    /// "3 comparisons have blanks because sets 2 and 3 are not measured."
+    private func blankComparisonsLine(count: Int, setIndices: [Int]) -> String {
+        let comparisons = count == 1 ? "1 comparison has blanks" : "\(count) comparisons have blanks"
+        let names = setIndices.map(String.init)
+        let sets: String
+        switch names.count {
+        case 0: sets = "a set is not measured"
+        case 1: sets = "set \(names[0]) is not measured"
+        default: sets = "sets \(names.dropLast().joined(separator: ", ")) and \(names[names.count - 1]) are not measured"
+        }
+        return "\(comparisons) because \(sets)."
     }
 
     private func stepsCard(photoCount: Int) -> some View {

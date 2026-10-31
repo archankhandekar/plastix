@@ -194,6 +194,43 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(p.states[.export], .upcoming("Needs at least one measured set"))
     }
 
+    func testCoincidentMidlineRoutesBackToMarkPoints() {
+        var degenerate = sixPoints
+        degenerate[.midlineBottom] = degenerate[.sternalNotch]
+        let only = set(stage: .preoperativeMarking, createdAt: t0, frontalLandmarks: degenerate)
+        let p = progress([only])
+        XCTAssertEqual(p.next.title, "Next: Move the midline points apart on the frontal photo")
+        XCTAssertEqual(p.next.detail, "Set 1 · The two midline points are on top of each other. Move one so they are apart.")
+        XCTAssertEqual(p.currentStep, .markPoints)
+        XCTAssertEqual(p.states[.markPoints], .current("Midline points on top of each other on set 1"))
+        XCTAssertEqual(p.states[.compare], .upcoming("Needs two measured sets"))
+        if case .markPoints(let set, let index, let capture, _, _) = p.next {
+            XCTAssertEqual(set.id, only.id)
+            XCTAssertEqual(index, 1)
+            XCTAssertEqual(capture.angle, .frontal)
+        } else {
+            XCTFail("expected markPoints, got \(p.next)")
+        }
+
+        let status = CaptureSetStatus(set: only, index: 1, sigma: settings.landmarkSigmaRatio)
+        XCTAssertFalse(status.isMeasured)
+        XCTAssertEqual(status.nextAction?.title, "Move the midline points apart")
+        XCTAssertEqual(status.gapLines, ["Set 1 has its two midline points on top of each other on its frontal photo"])
+    }
+
+    func testCoincidentMidlineOnALaterSetComesBeforeANewStage() {
+        var degenerate = sixPoints
+        degenerate[.midlineBottom] = degenerate[.sternalNotch]
+        let p = progress([
+            set(stage: .preoperativeMarking, createdAt: t0, frontalLandmarks: sixPoints),
+            set(stage: .afterClosure, createdAt: t1, frontalLandmarks: degenerate),
+        ])
+        XCTAssertEqual(p.measuredSets.count, 1)
+        XCTAssertEqual(p.next.title, "Next: Move the midline points apart on the frontal photo")
+        XCTAssertEqual(p.next.detail, "Set 2 · The two midline points are on top of each other. Move one so they are apart.")
+        XCTAssertEqual(p.states[.markPoints], .current("Midline points on top of each other on set 2"))
+    }
+
     func testIndexAndTitleOfSet() {
         let a = set(stage: .preoperativeMarking, createdAt: t0)
         let b = set(stage: .afterClosure, createdAt: t1)

@@ -113,13 +113,21 @@ struct SessionProgress {
             next = .markPoints(set: unmarked.set, index: unmarked.index, capture: frontal,
                                title: "Next: Mark 6 points on the frontal photo",
                                detail: SessionProgress.markPointsDetail(index: unmarked.index, set: unmarked.set))
+        } else if let coincident = completeWithFrontal.first(where: { SessionProgress.hasCoincidentMidline($0.set, sigma: sigma) }),
+                  let frontal = coincident.set.frontal {
+            // All six points are placed but the two midline points sit on one spot, so the
+            // set cannot be measured. Fixing it comes before anything else.
+            next = .markPoints(set: coincident.set, index: coincident.index, capture: frontal,
+                               title: "Next: Move the midline points apart on the frontal photo",
+                               detail: SessionProgress.coincidentMidlineDetail(index: coincident.index))
         } else if indexed.isEmpty {
             next = SessionProgress.firstSetAction
         } else if measured.count < 2, let last = indexed.last {
+            let m = measured.count
             next = .newSet(suggestedStage: SessionProgress.suggestedStage(after: last.set.stage),
                            previousPositioning: last.set.positioning, previousSetIndex: last.index,
                            title: "Next: Take 3 photos at the next stage",
-                           detail: "You have 1 measured set. A second set at a later stage lets you compare.")
+                           detail: "You have \(m) measured set\(m == 1 ? "" : "s"). A second set at a later stage lets you compare.")
         } else if !hasCompared, let first = measuredIndexed.first, let last = measuredIndexed.last, measured.count >= 2 {
             next = .compare(earlier: first.set, earlierIndex: first.index, later: last.set, laterIndex: last.index,
                             title: "Next: Compare set \(first.index) with set \(last.index)",
@@ -149,6 +157,8 @@ struct SessionProgress {
         } else if let unmarked = completeWithFrontal.first(where: { $0.set.frontal?.landmarks?.isComplete != true }) {
             let marked = SessionProgress.pointsMarked(on: unmarked.set.frontal)
             markPointsStatus = "\(marked) of 6 points marked on set \(unmarked.index)"
+        } else if let coincident = completeWithFrontal.first(where: { SessionProgress.hasCoincidentMidline($0.set, sigma: sigma) }) {
+            markPointsStatus = "Midline points on top of each other on set \(coincident.index)"
         } else if measuredIndexed.count == 1, let only = measuredIndexed.first {
             markPointsStatus = "Set \(only.index) measured"
         } else {
@@ -242,6 +252,19 @@ struct SessionProgress {
         return !metrics.flags.contains(.degenerateMidline)
     }
 
+    /// All six points are placed but the two midline points sit on one spot, so the set
+    /// is complete yet not measured.
+    static func hasCoincidentMidline(_ set: CaptureSet, sigma: Double) -> Bool {
+        guard let frontal = set.frontal, frontal.landmarks?.isComplete == true,
+              let metrics = frontal.frontalMetrics(sigma: sigma) else { return false }
+        return metrics.flags.contains(.degenerateMidline)
+    }
+
+    /// "Set 1 · The two midline points are on top of each other. Move one so they are apart."
+    static func coincidentMidlineDetail(index: Int) -> String {
+        "Set \(index) · The two midline points are on top of each other. Move one so they are apart."
+    }
+
     /// 6 minus the missing points; 0 when there are no landmarks at all.
     static func pointsMarked(on capture: Capture?) -> Int {
         LandmarkType.allCases.count - (capture?.landmarks?.missing.count ?? LandmarkType.allCases.count)
@@ -314,6 +337,10 @@ struct CaptureSetStatus {
             self.nextAction = .markPoints(set: set, index: index, capture: frontal,
                                           title: "Mark points on the frontal photo",
                                           detail: SessionProgress.markPointsDetail(index: index, set: set))
+        } else if let frontal = set.frontal, SessionProgress.hasCoincidentMidline(set, sigma: sigma) {
+            self.nextAction = .markPoints(set: set, index: index, capture: frontal,
+                                          title: "Move the midline points apart",
+                                          detail: SessionProgress.coincidentMidlineDetail(index: index))
         } else {
             self.nextAction = nil
         }
@@ -328,6 +355,9 @@ struct CaptureSetStatus {
             } else {
                 gaps.append("Set \(index) has \(points) of \(allPoints) points on its frontal photo")
             }
+        }
+        if SessionProgress.hasCoincidentMidline(set, sigma: sigma) {
+            gaps.append("Set \(index) has its two midline points on top of each other on its frontal photo")
         }
         self.gapLines = gaps
     }
