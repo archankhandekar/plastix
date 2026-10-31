@@ -21,6 +21,8 @@ struct LandmarkEditorView: View {
     @State private var loaded = false
     @State private var showMetrics = false
     @State private var confirmDiscard = false
+    /// Set when a save fails; the editor stays open so the points can be saved again.
+    @State private var saveError: String?
 
     private var session: StudySession? { store.session(id: sessionID) }
     private var capture: Capture? { session?.captureSet(id: setID)?.captures.values.first { $0.id == captureID } }
@@ -79,10 +81,17 @@ struct LandmarkEditorView: View {
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
-                    Button("Save and go back") { save(capture, in: session) }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .padding(Theme.Spacing.m)
-                        .background(.bar)
+                    VStack(spacing: Theme.Spacing.s) {
+                        if let saveError {
+                            GuidanceCard(kind: .unreliable,
+                                         title: "Not saved yet",
+                                         lines: [saveError, "Your points are still on screen. Try saving again."])
+                        }
+                        Button("Save and go back") { save(capture, in: session) }
+                            .buttonStyle(PrimaryButtonStyle())
+                    }
+                    .padding(Theme.Spacing.m)
+                    .background(.bar)
                 }
                 .confirmationDialog("Discard the points you placed?", isPresented: $confirmDiscard, titleVisibility: .visible) {
                     Button("Discard", role: .destructive) { dismiss() }
@@ -263,7 +272,11 @@ struct LandmarkEditorView: View {
         set.update(updated)
         var s = session
         s.update(set)
-        store.save(s)
+        guard store.save(s) else {
+            saveError = store.lastError ?? "The points could not be saved."
+            return
+        }
+        saveError = nil
         dismiss()
     }
 }
@@ -393,9 +406,21 @@ struct LandmarkCanvas: View {
             let isLeft = type == .leftNipple || type == .leftIMF
             let color: Color = type == .sternalNotch || type == .midlineBottom ? .white : (isLeft ? .orange : .yellow)
             let r: CGFloat = 7
-            ctx.stroke(Path(ellipseIn: CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r)), with: .color(color), lineWidth: 2)
+            // Dark halo under the ring and dot so they stay visible on light skin.
+            let ring = Path(ellipseIn: CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r))
+            ctx.stroke(ring, with: .color(.black.opacity(0.7)), lineWidth: 4)
+            ctx.stroke(ring, with: .color(color), lineWidth: 2)
+            ctx.fill(Path(ellipseIn: CGRect(x: v.x - 2.5, y: v.y - 2.5, width: 5, height: 5)), with: .color(.black.opacity(0.7)))
             ctx.fill(Path(ellipseIn: CGRect(x: v.x - 1.5, y: v.y - 1.5, width: 3, height: 3)), with: .color(color))
-            ctx.draw(Text(type.shortName).font(.subheadline).foregroundStyle(color), at: CGPoint(x: v.x, y: v.y - r - 8))
+            // Caption on a black 70% rounded backing, like the banner, just above the ring.
+            let label = ctx.resolve(Text(type.shortName).font(.subheadline).foregroundStyle(color))
+            let size = label.measure(in: CGSize(width: 240, height: 60))
+            let pad: CGFloat = 4
+            let center = CGPoint(x: v.x, y: v.y - r - 4 - pad - size.height / 2)
+            let plate = CGRect(x: center.x - size.width / 2 - pad, y: center.y - size.height / 2 - pad / 2,
+                               width: size.width + 2 * pad, height: size.height + pad)
+            ctx.fill(Path(roundedRect: plate, cornerRadius: 4), with: .color(.black.opacity(0.7)))
+            ctx.draw(label, at: center)
         }
     }
 
