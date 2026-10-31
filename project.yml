@@ -37,12 +37,39 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+  # Unit tests for the app layer (wizard logic). The folder is a sibling of the app
+  # sources so nothing here is compiled into the app.
+  SymmetryPrototypeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: App/SymmetryPrototypeTests
+    dependencies:
+      - target: SymmetryPrototype
+    configFiles:
+      Debug: Config/Local.xcconfig
+      Release: Config/Local.xcconfig
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        # Local.xcconfig sets the app's bundle identifier; the test bundle needs its own.
+        PRODUCT_BUNDLE_IDENTIFIER: org.research.symmetry.SymmetryPrototypeTests
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
 schemes:
   SymmetryPrototype:
     build:
       targets:
         SymmetryPrototype: all
+        SymmetryPrototypeTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - SymmetryPrototypeTests
     archive:
       config: Release
