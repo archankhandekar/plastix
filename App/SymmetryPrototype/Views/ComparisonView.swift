@@ -132,6 +132,7 @@ struct ComparisonView: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Theme.Colors.hairline))
         }
         .accessibilityLabel(title)
+        .accessibilityValue(set(selection.wrappedValue).map { label($0, in: session) } ?? "Choose a set")
     }
 
     // MARK: - Readiness
@@ -139,7 +140,8 @@ struct ComparisonView: View {
     @ViewBuilder
     private func content(session: StudySession) -> some View {
         if let b = set(baselineID), let c = set(currentID), b.id != c.id, candidates.count >= 2 {
-            if let comparison = ReportBuilder.compareFrontal(baseline: b, current: c, settings: settings.reportSettings) {
+            let bothMarked = (b.frontal?.landmarks?.isComplete ?? false) && (c.frontal?.landmarks?.isComplete ?? false)
+            if bothMarked, let comparison = ReportBuilder.compareFrontal(baseline: b, current: c, settings: settings.reportSettings) {
                 readyContent(session: session, baseline: b, current: c, comparison: comparison)
             } else {
                 notReadyContent(session: session, baseline: b, current: c)
@@ -205,7 +207,7 @@ struct ComparisonView: View {
 
             if let reg {
                 if reg.isReliable {
-                    Text("The two frontal photos lined up: all \(reg.sharedLandmarkCount) points matched within the limit.")
+                    Text("The two frontal photos lined up: the average mismatch over \(reg.sharedLandmarkCount) points is within the limit.")
                         .font(.body)
                         .foregroundStyle(Theme.Colors.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -216,6 +218,11 @@ struct ComparisonView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 DisclosureGroup {
+                    Text("These are fit diagnostics, not measurements, so they have no ±.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.Colors.slate)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Theme.Spacing.s)
                     Text(String(format: "Registration residual %.3f L over %d landmarks (limit %.2f L), scale %.2f, rotation %.1f°",
                                 reg.rmsResidualRatio, reg.sharedLandmarkCount, reg.maxResidualRatio,
                                 reg.transform.scale, reg.transform.rotation * 180 / .pi))
@@ -240,7 +247,7 @@ struct ComparisonView: View {
                 LandmarkOverlayImage(image: image, baseline: bl, current: c.frontal?.landmarks,
                                      transform: reg?.transform, dimmed: dimmed)
                     .frame(maxHeight: 360)
-                Text("Filled orange = set \(i) points. Hollow teal = set \(j) points moved onto the set \(i) photo.")
+                Text("Filled grey = set \(i) points. Hollow teal = set \(j) points moved onto the set \(i) photo.")
                     .font(.subheadline)
                     .foregroundStyle(Theme.Colors.slate)
                     .fixedSize(horizontal: false, vertical: true)
@@ -262,18 +269,21 @@ struct ComparisonView: View {
                 guard let set else { return false }
                 return !set.leftContour.isEmpty && !set.rightContour.isEmpty
             }
+            let missing = LandmarkType.allCases.filter { type in
+                (b.frontal?.landmarks?.missing.contains(type) ?? true) || (c.frontal?.landmarks?.missing.contains(type) ?? true)
+            }
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                 ForEach(comparison.deltas, id: \.name) { delta in
                     MetricDeltaRow(delta: delta,
                                    columnTitles: ("Set \(i)", "Set \(j)", "Change"),
                                    explanation: MetricGlossary.meaning(for: delta.name),
-                                   reason: MetricGlossary.reason(flags: comparison.flags, missing: [],
+                                   reason: MetricGlossary.reason(flags: comparison.flags, missing: missing,
                                                                  hasContours: hasContours, metricName: delta.name))
                 }
             }
-            .opacity(dimmed ? 0.6 : 1)
+            .opacity(dimmed ? 0.8 : 1)
 
-            Text(MetricGlossary.changeLine)
+            Text(MetricGlossary.changeLine(earlier: i, later: j))
                 .font(.subheadline)
                 .foregroundStyle(Theme.Colors.slate)
                 .fixedSize(horizontal: false, vertical: true)
@@ -353,8 +363,8 @@ struct ObliqueCompareCard: View {
     }
 }
 
-/// An image with two landmark sets drawn in its pixel space: the earlier set filled in the
-/// caution colour, the later set hollow in the guide colour after registration.
+/// An image with two landmark sets drawn in its pixel space: the earlier set filled in
+/// slate grey, the later set hollow in the guide colour after registration.
 struct LandmarkOverlayImage: View {
     let image: UIImage
     let baseline: LandmarkSet
@@ -362,7 +372,7 @@ struct LandmarkOverlayImage: View {
     let transform: SimilarityTransform?
     let dimmed: Bool
 
-    private let earlierColor = Theme.Colors.caution
+    private let earlierColor = Theme.Colors.slate
     private let laterColor = Theme.Colors.guide
 
     var body: some View {

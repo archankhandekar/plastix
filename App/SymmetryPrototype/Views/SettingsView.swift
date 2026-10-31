@@ -26,7 +26,7 @@ struct SettingsView: View {
             } header: {
                 header("Uncertainty")
             } footer: {
-                footer("How much a hand-placed point is assumed to wobble, as a share of L. This drives every ± value.")
+                footer("How much a hand-placed point is assumed to wobble, as a share of L. This drives the ± on every point-based value; Contour overlap uses a fixed grid ±.")
             }
 
             Section {

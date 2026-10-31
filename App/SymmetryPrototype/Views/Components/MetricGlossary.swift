@@ -7,7 +7,11 @@ enum MetricGlossary {
     static let referenceLengthLine = "L is the distance from the sternal notch to the midline bottom in each photo. Every value is a share of L, so the two photos can be compared even if the camera was closer or further away."
     static let uncertaintyLine = "The ± is the wobble from placing points by hand. A value or change smaller than its ± cannot be told apart from zero."
     static let signLine = "A plus sign means the patient's left sits lower, or farther from the midline, than the right. A minus sign means the opposite."
-    static let changeLine = "Change = set 2 minus set 1, with both uncertainties combined."
+    static let changeLine = "Change = later set minus earlier set, with both uncertainties combined."
+    /// The change line for a specific pair, naming the sets as they appear in the row titles.
+    static func changeLine(earlier i: Int, later j: Int) -> String {
+        "Change = set \(j) minus set \(i), with both uncertainties combined."
+    }
     static let withinUncertaintyLine = "The change is smaller than its ±, so it cannot be told apart from zero."
 
     /// Metric names in `FrontalMetrics.namedMetrics` order.
@@ -34,7 +38,7 @@ enum MetricGlossary {
         case "Inframammary fold height difference":
             return "How much lower the patient's left fold sits than the right, as a share of L. Plus means left is lower."
         case "Contour overlap":
-            return "How closely the two breast outlines coincide when one is mirrored across the midline. 1.00 means they coincide exactly, 0 means no overlap."
+            return "How closely the two breast outlines coincide when one is mirrored across the midline. 1.00 means they coincide exactly, 0 means no overlap. Its ± comes from the drawing grid, not from point placement."
         default:
             return ""
         }
