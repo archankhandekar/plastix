@@ -55,7 +55,9 @@ struct ComparisonView: View {
             .navigationTitle("Compare")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
-                NextActionBar(title: "Next: Export the report") { route = .export }
+                if let next = nextAction(session: session) {
+                    NextActionBar(title: next.title) { route = next.route }
+                }
             }
             .navigationDestination(item: $route) { route in
                 switch route {
@@ -137,14 +139,50 @@ struct ComparisonView: View {
 
     // MARK: - Readiness
 
+    /// The chosen pair when it is two different sets, else nil.
+    private func chosenPair() -> (baseline: CaptureSet, current: CaptureSet)? {
+        guard let b = set(baselineID), let c = set(currentID), b.id != c.id, candidates.count >= 2 else { return nil }
+        return (b, c)
+    }
+
+    /// The comparison for the chosen pair when both frontal photos have all 6 points.
+    private func readyComparison(baseline b: CaptureSet, current c: CaptureSet) -> CaptureComparison? {
+        let bothMarked = (b.frontal?.landmarks?.isComplete ?? false) && (c.frontal?.landmarks?.isComplete ?? false)
+        guard bothMarked else { return nil }
+        return ReportBuilder.compareFrontal(baseline: b, current: c, settings: settings.reportSettings)
+    }
+
+    /// The first set of the chosen pair (later set first) whose frontal photo is short of
+    /// 6 points, with its status: the single place to send the user when not ready.
+    private func pointsTarget(session: StudySession, baseline b: CaptureSet, current c: CaptureSet)
+        -> (status: CaptureSetStatus, set: CaptureSet, frontal: Capture)? {
+        let sigma = settings.landmarkSigmaRatio
+        let sets = [c, b]
+        let statuses = sets.map { CaptureSetStatus(set: $0, index: index($0, in: session), sigma: sigma) }
+        guard let position = statuses.firstIndex(where: { $0.pointsMarked < LandmarkType.allCases.count }),
+              let frontal = sets[position].frontal else { return nil }
+        return (statuses[position], sets[position], frontal)
+    }
+
+    /// What the sticky bar offers: export when the comparison is ready, marking points when
+    /// one set of the pair is short of them, nothing when there is no single target.
+    private func nextAction(session: StudySession) -> (title: String, route: CompareRoute)? {
+        guard let pair = chosenPair() else { return nil }
+        if readyComparison(baseline: pair.baseline, current: pair.current) != nil {
+            return ("Next: Export the report", .export)
+        }
+        guard let target = pointsTarget(session: session, baseline: pair.baseline, current: pair.current) else { return nil }
+        return ("Next: Mark points on set \(target.status.index)",
+                .markPoints(setID: target.set.id, captureID: target.frontal.id))
+    }
+
     @ViewBuilder
     private func content(session: StudySession) -> some View {
-        if let b = set(baselineID), let c = set(currentID), b.id != c.id, candidates.count >= 2 {
-            let bothMarked = (b.frontal?.landmarks?.isComplete ?? false) && (c.frontal?.landmarks?.isComplete ?? false)
-            if bothMarked, let comparison = ReportBuilder.compareFrontal(baseline: b, current: c, settings: settings.reportSettings) {
-                readyContent(session: session, baseline: b, current: c, comparison: comparison)
+        if let pair = chosenPair() {
+            if let comparison = readyComparison(baseline: pair.baseline, current: pair.current) {
+                readyContent(session: session, baseline: pair.baseline, current: pair.current, comparison: comparison)
             } else {
-                notReadyContent(session: session, baseline: b, current: c)
+                notReadyContent(session: session, baseline: pair.baseline, current: pair.current)
             }
         } else {
             GuidanceCard(kind: .caution,
@@ -154,18 +192,14 @@ struct ComparisonView: View {
 
     @ViewBuilder
     private func notReadyContent(session: StudySession, baseline b: CaptureSet, current c: CaptureSet) -> some View {
-        let sigma = settings.landmarkSigmaRatio
-        let statuses = [c, b].map { CaptureSetStatus(set: $0, index: index($0, in: session), sigma: sigma) }
-        let sets = [c, b]
-        if let position = statuses.firstIndex(where: { $0.pointsMarked < LandmarkType.allCases.count }),
-           let frontal = sets[position].frontal {
-            let status = statuses[position]
+        if let target = pointsTarget(session: session, baseline: b, current: c) {
+            let status = target.status
             let text = status.pointsMarked == 0
                 ? "Set \(status.index) has no points on its frontal photo yet."
                 : "Set \(status.index) has \(status.pointsMarked) of 6 points on its frontal photo."
             GuidanceCard(kind: .caution, body: text) {
                 Button("Mark points on set \(status.index)") {
-                    route = .markPoints(setID: sets[position].id, captureID: frontal.id)
+                    route = .markPoints(setID: target.set.id, captureID: target.frontal.id)
                 }
                 .buttonStyle(PrimaryButtonStyle())
             }
@@ -223,7 +257,7 @@ struct ComparisonView: View {
                         .foregroundStyle(Theme.Colors.slate)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, Theme.Spacing.s)
-                    Text(String(format: "Registration residual %.3f L over %d landmarks (limit %.2f L), scale %.2f, rotation %.1f°",
+                    Text(String(format: "Average mismatch %.3f L over %d points (limit %.2f L). Scale %.2f, rotation %.1f°.",
                                 reg.rmsResidualRatio, reg.sharedLandmarkCount, reg.maxResidualRatio,
                                 reg.transform.scale, reg.transform.rotation * 180 / .pi))
                         .font(.metric)
@@ -277,11 +311,10 @@ struct ComparisonView: View {
                     MetricDeltaRow(delta: delta,
                                    columnTitles: ("Set \(i)", "Set \(j)", "Change"),
                                    explanation: MetricGlossary.meaning(for: delta.name),
-                                   reason: MetricGlossary.reason(flags: comparison.flags, missing: missing,
-                                                                 hasContours: hasContours, metricName: delta.name))
+                                   reason: deltaReason(delta, comparison: comparison, missing: missing, hasContours: hasContours),
+                                   dimmed: dimmed)
                 }
             }
-            .opacity(dimmed ? 0.8 : 1)
 
             Text(MetricGlossary.changeLine(earlier: i, later: j))
                 .font(.subheadline)
@@ -291,6 +324,17 @@ struct ComparisonView: View {
             FlagList(flags: comparison.flags)
         }
         .cardStyle()
+    }
+
+    /// Why a change is "Not measured". Contour overlap gets its own reason when outlines
+    /// exist on only one of the two sets, so the reason never contradicts a value above it.
+    private func deltaReason(_ delta: MetricDelta, comparison: CaptureComparison,
+                             missing: [LandmarkType], hasContours: Bool) -> String? {
+        if delta.name == "Contour overlap", (delta.baseline == nil) != (delta.current == nil) {
+            return "Outlines were drawn on only one set, so no change is defined. This one is optional."
+        }
+        return MetricGlossary.reason(flags: comparison.flags, missing: missing,
+                                     hasContours: hasContours, metricName: delta.name)
     }
 
     /// Names of the positioning fields that differ, in field order.

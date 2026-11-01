@@ -61,6 +61,9 @@ struct MetricDeltaRow: View {
     var columnTitles: (String, String, String) = ("Baseline", "Current", "Change")
     var explanation: String? = nil
     var reason: String? = nil
+    /// Fades only the three value texts (never the explanation or reason) when the
+    /// comparison the values come from is not reliable.
+    var dimmed: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -103,6 +106,7 @@ struct MetricDeltaRow: View {
             Text(MetricFormatter.text(m))
                 .font(emphasised ? .metric.weight(.semibold) : .metric)
                 .foregroundStyle(m == nil ? Theme.Colors.slate : Theme.Colors.ink)
+                .opacity(dimmed ? 0.6 : 1)
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.trailing)
         }
