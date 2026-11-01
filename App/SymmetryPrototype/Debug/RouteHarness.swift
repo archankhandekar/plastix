@@ -338,12 +338,15 @@ enum RouteHarness {
         }
 
         /// The stage's frontal render through ImageBridge.process, as the camera would hand it
-        /// to the photo check. With `retake`, the blurred render with a 9 degree tilt.
+        /// to the photo check. With `retake`, the blurred render.
         func pendingFrontal(stage: Int, retake: Bool, thresholds: QualityThresholds) -> CaptureView.PendingCapture? {
             guard let view = patient.view(stage: max(1, min(stage, maxStage)), angle: .frontal) else { return nil }
             let useBlurred = retake && view.blurredImage != nil
             let name = useBlurred ? (view.blurredImage ?? view.image) : view.image
-            let tilt = retake ? 9.0 : 0.5
+            // The rendered roll plus the virtual camera's (static) drift: the same value the
+            // practice camera reports, so the photo check never claims a tilt that is not there.
+            let tilt = VirtualCameraSource(patient: patient, setIndex: max(1, min(stage, maxStage)), angle: .frontal)
+                .tiltDegrees(at: 0, staticMotion: true)
             guard let data = DemoPatient.imageData(named: name),
                   let processed = ImageBridge.process(data, tiltDegrees: tilt, thresholds: thresholds) else { return nil }
             let key = DemoAssetKey(stageIndex: max(1, min(stage, maxStage)), angle: .frontal,

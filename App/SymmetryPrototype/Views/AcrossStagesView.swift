@@ -126,7 +126,13 @@ struct AcrossStagesView: View {
 
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                 ForEach(lines, id: \.0.id) { entry, line in
-                    readoutLine(line, measured: entry.reading.reading(metric).measurement != nil)
+                    let r = entry.reading.reading(metric)
+                    if r.measurement != nil {
+                        // Keeps the value and its ± together on one line where the width allows.
+                        ReadoutLine(title: entry.title, readout: r.readout)
+                    } else {
+                        readoutLine(line, measured: false)
+                    }
                 }
             }
             .padding(.top, Theme.Spacing.xs)

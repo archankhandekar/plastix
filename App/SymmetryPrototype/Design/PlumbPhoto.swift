@@ -209,30 +209,6 @@ struct PlateCornerTags: View {
     }
 }
 
-/// The plate's practice marker: the word "Practice" on a small patch of the practice hatch.
-/// The screen's pinned practice band says the full sentence; this only marks the photo.
-struct PracticeTag: View {
-    var body: some View {
-        Text("Practice")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(Theme.Colors.plateInk)
-            .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(Theme.Colors.plate, in: RoundedRectangle(cornerRadius: 2))
-            .padding(4)
-            .background {
-                ZStack {
-                    Theme.Colors.plate
-                    HatchPattern(spacing: 6)
-                        .stroke(Theme.Colors.plateGraduation.opacity(0.6), lineWidth: 1)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 3))
-            }
-            .accessibilityLabel("Practice photo")
-    }
-}
-
 /// The photo drawn through `PlateGeometry.turnTransform(progress:)`. Animatable, so the
 /// turn interpolates the rotation rather than crossfading two images.
 private struct TurnedPhoto: View, Animatable {

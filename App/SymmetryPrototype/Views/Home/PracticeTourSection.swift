@@ -7,6 +7,8 @@ import SwiftUI
 /// the open list. Resetting the virtual patient is not here; it is a quiet action at the
 /// end of the page.
 struct PracticeTourSection: View {
+    /// Grows with Dynamic Type so the glyph never overflows its column at accessibility sizes.
+    @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 24
     let tour: PracticeTour
     let onSelect: (PracticeTourTask) -> Void
 
@@ -86,7 +88,7 @@ struct PracticeTourSection: View {
                 Image(systemName: item.isDone ? "checkmark" : "circle.dashed")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(item.isDone ? Theme.Colors.drape : Theme.Colors.graduation)
-                    .frame(width: 24)
+                    .frame(width: iconWidth)
                     .accessibilityHidden(true)
                 Text(item.task.title)
                     .font(.body)

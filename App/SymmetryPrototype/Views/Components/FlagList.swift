@@ -4,7 +4,7 @@ import SymmetryCore
 /// Plain-language advice for the photo quality checks. One sentence names the problem and
 /// what to try. The raw check values stay in the exported JSON, never on screen.
 enum QualityAdvice {
-    static let passed = "Passed the checks: sharp, well lit and level."
+    static let passed = "Passed the checks: sharp, well lit and inside the tilt limit."
     /// Shown instead of `passed` when the phone gave no tilt reading (pointing down, or no
     /// motion data), so the level check never ran.
     static let passedNoTilt = "Passed the checks: sharp and well lit. Tilt was not checked."
