@@ -3,24 +3,19 @@ import SymmetryCore
 import SymmetryModels
 import UIKit
 
-/// Step 3: an earlier set against a later one. The frontal photos get a registered point
-/// overlay and stacked metric rows; oblique photos are shown side by side only.
+/// Compare two sets in detail: an earlier set against a later one. The frontal photos get a
+/// registered point overlay and stacked metric rows with the change and its ±; oblique
+/// photos are shown side by side only. Flat sections on the tray, photos on Plate.
 /// All numbers come from `ReportBuilder.compareFrontal`, the same path the export uses.
 struct ComparisonView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var navigator: AppNavigator
+    @Environment(\.sessionKind) private var kind
     let sessionID: UUID
 
     @State private var baselineID: UUID?
     @State private var currentID: UUID?
-    @State private var route: CompareRoute?
-
-    enum CompareRoute: Hashable, Identifiable {
-        case export
-        case markPoints(setID: UUID, captureID: UUID)
-
-        var id: Self { self }
-    }
 
     init(sessionID: UUID, earlierID: UUID? = nil, laterID: UUID? = nil) {
         self.sessionID = sessionID
@@ -29,42 +24,37 @@ struct ComparisonView: View {
     }
 
     private var session: StudySession? { store.session(id: sessionID) }
+    private var ref: SessionRef { SessionRef(id: sessionID, kind: kind) }
     private var candidates: [CaptureSet] { session?.orderedCaptureSets.filter { $0.frontal != nil } ?? [] }
 
     private func set(_ id: UUID?) -> CaptureSet? { id.flatMap { session?.captureSet(id: $0) } }
 
     private func index(_ set: CaptureSet, in session: StudySession) -> Int {
-        SessionProgress.index(of: set, in: session)
+        SessionWizard.index(of: set, in: session)
     }
 
+    /// "Set 1, preoperative marking"
     private func label(_ set: CaptureSet, in session: StudySession) -> String {
-        "Set \(index(set, in: session)) · \(set.stage.label)"
+        SessionWizard.title(of: set, in: session)
     }
 
     var body: some View {
         if let session {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-                    pickerCard(session: session)
+                VStack(alignment: .leading, spacing: Theme.Spacing.section) {
+                    pickerSection(session: session)
                     content(session: session)
-                    ResearchNoticeBanner()
+                    ResearchNoticeBanner(showsExplainerLink: false)
                 }
-                .padding(Theme.Spacing.l)
+                .padding(Theme.Spacing.margin)
             }
-            .background(Theme.Colors.paper)
-            .navigationTitle("Compare")
+            .background(Theme.Colors.tray)
+            .navigationTitle("Compare two sets in detail")
             .navigationBarTitleDisplayMode(.inline)
+            .practiceBand(kind == .practice)
             .safeAreaInset(edge: .bottom) {
                 if let next = nextAction(session: session) {
-                    NextActionBar(title: next.title) { route = next.route }
-                }
-            }
-            .navigationDestination(item: $route) { route in
-                switch route {
-                case .export:
-                    ExportView(sessionID: sessionID)
-                case .markPoints(let setID, let captureID):
-                    LandmarkEditorView(sessionID: sessionID, setID: setID, captureID: captureID)
+                    NextActionBar(title: next.title) { navigator.push(next.route) }
                 }
             }
             .onAppear { seedSelection(session: session) }
@@ -74,11 +64,10 @@ struct ComparisonView: View {
     }
 
     /// Defaults to the first and last measured sets, then to the first and last sets with a
-    /// frontal photo, and remembers that the Compare step was opened.
+    /// frontal photo.
     private func seedSelection(session: StudySession) {
-        let progress = SessionProgress(session: session, settings: settings.reportSettings,
-                                       hasCompared: ComparedFlag.isSet(sessionID: sessionID))
-        let measured = progress.measuredSets
+        let wizard = SessionWizard(session: session, settings: settings.reportSettings, kind: kind)
+        let measured = wizard.measuredSets
         let needsSeed = baselineID == nil || currentID == nil
         if baselineID == nil { baselineID = measured.first?.id ?? candidates.first?.id }
         if currentID == nil { currentID = measured.last?.id ?? candidates.last?.id }
@@ -86,13 +75,12 @@ struct ComparisonView: View {
             baselineID = candidates.first?.id
             currentID = candidates.last?.id
         }
-        ComparedFlag.mark(sessionID: sessionID)
     }
 
     // MARK: - Set choice
 
     @ViewBuilder
-    private func pickerCard(session: StudySession) -> some View {
+    private func pickerSection(session: StudySession) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
             if let b = set(baselineID), let c = set(currentID) {
                 Text("Comparing set \(index(b, in: session)) (\(b.stage.label)) with set \(index(c, in: session)) (\(c.stage.label)).")
@@ -103,38 +91,42 @@ struct ComparisonView: View {
             setMenu("Earlier set", selection: $baselineID, session: session)
             setMenu("Later set", selection: $currentID, session: session)
         }
-        .cardStyle()
     }
 
+    /// A 56pt outlined menu: the field name above, the chosen set inside the outline.
     private func setMenu(_ title: String, selection: Binding<UUID?>, session: StudySession) -> some View {
-        Menu {
-            ForEach(candidates) { s in
-                Button(label(s, in: session)) { selection.wrappedValue = s.id }
-            }
-        } label: {
-            HStack(alignment: .center, spacing: Theme.Spacing.m) {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    Text(title)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.Colors.slate)
-                    Text(set(selection.wrappedValue).map { label($0, in: session) } ?? "Choose a set")
+        let chosen = set(selection.wrappedValue).map { label($0, in: session) } ?? "Choose a set"
+        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text(title)
+                .font(.support)
+                .foregroundStyle(Theme.Colors.graduation)
+                .accessibilityHidden(true)
+            Menu {
+                ForEach(candidates) { s in
+                    Button(label(s, in: session)) { selection.wrappedValue = s.id }
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
+                    Text(chosen)
                         .font(.body)
                         .foregroundStyle(Theme.Colors.ink)
+                        .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Text("Choose")
+                        .font(.support.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.drape)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.slate)
+                .padding(.horizontal, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.s)
+                .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
+                .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                    .strokeBorder(Theme.Colors.graduation, lineWidth: 1.5))
             }
-            .padding(.horizontal, Theme.Spacing.m)
-            .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
-            .contentShape(Rectangle())
-            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Theme.Colors.hairline))
+            .accessibilityLabel(title)
+            .accessibilityValue(chosen)
         }
-        .accessibilityLabel(title)
-        .accessibilityValue(set(selection.wrappedValue).map { label($0, in: session) } ?? "Choose a set")
     }
 
     // MARK: - Readiness
@@ -155,25 +147,31 @@ struct ComparisonView: View {
     /// The first set of the chosen pair (later set first) whose frontal photo is short of
     /// 6 points, with its status: the single place to send the user when not ready.
     private func pointsTarget(session: StudySession, baseline b: CaptureSet, current c: CaptureSet)
-        -> (status: CaptureSetStatus, set: CaptureSet, frontal: Capture)? {
+        -> (status: SetStatus, set: CaptureSet, frontal: Capture)? {
         let sigma = settings.landmarkSigmaRatio
         let sets = [c, b]
-        let statuses = sets.map { CaptureSetStatus(set: $0, index: index($0, in: session), sigma: sigma) }
+        let statuses = sets.map { SetStatus(set: $0, index: index($0, in: session), sigma: sigma) }
         guard let position = statuses.firstIndex(where: { $0.pointsMarked < LandmarkType.allCases.count }),
               let frontal = sets[position].frontal else { return nil }
         return (statuses[position], sets[position], frontal)
     }
 
+    private func markPointsRoute(_ set: CaptureSet, _ frontal: Capture) -> AppRoute {
+        .markPoints(ref, setID: set.id, captureID: frontal.id)
+    }
+
     /// What the sticky bar offers: export when the comparison is ready, marking points when
     /// one set of the pair is short of them, nothing when there is no single target.
-    private func nextAction(session: StudySession) -> (title: String, route: CompareRoute)? {
+    private func nextAction(session: StudySession) -> (title: String, route: AppRoute)? {
         guard let pair = chosenPair() else { return nil }
         if readyComparison(baseline: pair.baseline, current: pair.current) != nil {
-            return ("Next: Export the report", .export)
+            // Practice sessions are never exported; their export screen is a preview.
+            let title = kind == .practice ? "See what a report would contain" : "Export the report"
+            return (title, .export(ref))
         }
-        guard let target = pointsTarget(session: session, baseline: pair.baseline, current: pair.current) else { return nil }
-        return ("Next: Mark points on set \(target.status.index)",
-                .markPoints(setID: target.set.id, captureID: target.frontal.id))
+        guard let gap = pointsTarget(session: session, baseline: pair.baseline, current: pair.current) else { return nil }
+        let setNumber = gap.status.index
+        return ("Mark the points on set \(setNumber)", markPointsRoute(gap.set, gap.frontal))
     }
 
     @ViewBuilder
@@ -197,11 +195,12 @@ struct ComparisonView: View {
             let text = status.pointsMarked == 0
                 ? "Set \(status.index) has no points on its frontal photo yet."
                 : "Set \(status.index) has \(status.pointsMarked) of 6 points on its frontal photo."
+            // The one primary action is the bar below; this is its secondary twin in context.
             GuidanceCard(kind: .caution, body: text) {
-                Button("Mark points on set \(status.index)") {
-                    route = .markPoints(setID: target.set.id, captureID: target.frontal.id)
+                Button("Mark the points on set \(status.index)") {
+                    navigator.push(markPointsRoute(target.set, target.frontal))
                 }
-                .buttonStyle(PrimaryButtonStyle())
+                .buttonStyle(SecondaryButtonStyle())
             }
         } else {
             GuidanceCard(kind: .caution,
@@ -219,7 +218,7 @@ struct ComparisonView: View {
 
         HowToReadCard()
 
-        frontalCard(session: session, baseline: b, current: c, comparison: comparison, i: i, j: j)
+        frontalSection(session: session, baseline: b, current: c, comparison: comparison, i: i, j: j)
 
         ForEach([ViewAngle.leftOblique, .rightOblique]) { angle in
             if b.captures[angle] != nil || c.captures[angle] != nil {
@@ -229,15 +228,30 @@ struct ComparisonView: View {
         }
     }
 
+    private static let notLinedUp = "The two frontal photos did not line up. The numbers below are shown faded. Re-check the sternal notch and midline bottom on both frontal photos, then come back."
+
+    private func cautionLine(_ text: String) -> some View {
+        Label {
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle")
+                .accessibilityHidden(true)
+        }
+        .font(.body)
+        .foregroundStyle(Theme.Colors.caution)
+    }
+
     @ViewBuilder
-    private func frontalCard(session: StudySession, baseline b: CaptureSet, current c: CaptureSet,
-                             comparison: CaptureComparison, i: Int, j: Int) -> some View {
+    private func frontalSection(session: StudySession, baseline b: CaptureSet, current c: CaptureSet,
+                                comparison: CaptureComparison, i: Int, j: Int) -> some View {
         let reg = comparison.registration
         let dimmed = !(reg?.isReliable ?? false)
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
             Text("Frontal")
-                .font(.stepTitle)
+                .font(.sectionTitle)
                 .foregroundStyle(Theme.Colors.ink)
+                .accessibilityAddTraits(.isHeader)
 
             if let reg {
                 if reg.isReliable {
@@ -246,23 +260,22 @@ struct ComparisonView: View {
                         .foregroundStyle(Theme.Colors.ink)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("The two frontal photos did not line up. The numbers below are shown faded. Re-check the sternal notch and midline bottom on both frontal photos, then come back.")
-                        .font(.body)
-                        .foregroundStyle(Theme.Colors.unreliable)
-                        .fixedSize(horizontal: false, vertical: true)
+                    cautionLine(Self.notLinedUp)
                 }
                 DisclosureGroup {
                     Text("These are fit diagnostics, not measurements, so they have no ±.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.Colors.slate)
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.graduation)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, Theme.Spacing.s)
                     Text(String(format: "Average mismatch %.3f L over %d points (limit %.2f L). Scale %.2f, rotation %.1f°.",
                                 reg.rmsResidualRatio, reg.sharedLandmarkCount, reg.maxResidualRatio,
                                 reg.transform.scale, reg.transform.rotation * 180 / .pi))
-                        .font(.metric)
-                        .foregroundStyle(reg.isReliable ? Theme.Colors.slate : Theme.Colors.unreliable)
+                        .font(.readoutRow)
+                        .foregroundStyle(reg.isReliable ? Theme.Colors.graduation : Theme.Colors.caution)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, Theme.Spacing.s)
                 } label: {
                     Text("Show alignment details")
@@ -270,25 +283,25 @@ struct ComparisonView: View {
                         .foregroundStyle(Theme.Colors.ink)
                         .tapTarget()
                 }
+                .tint(Theme.Colors.drape)
             } else {
-                Text("The two frontal photos did not line up. The numbers below are shown faded. Re-check the sternal notch and midline bottom on both frontal photos, then come back.")
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.unreliable)
-                    .fixedSize(horizontal: false, vertical: true)
+                cautionLine(Self.notLinedUp)
             }
 
             if let bf = b.frontal, let bl = bf.landmarks, let image = store.image(for: bf, in: session) {
                 LandmarkOverlayImage(image: image, baseline: bl, current: c.frontal?.landmarks,
                                      transform: reg?.transform, dimmed: dimmed)
-                    .frame(maxHeight: 360)
-                Text("Filled grey = set \(i) points. Hollow teal = set \(j) points moved onto the set \(i) photo.")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.Colors.slate)
+                    .frame(maxWidth: .infinity, maxHeight: 360)
+                    .background(Theme.Colors.plate, in: RoundedRectangle(cornerRadius: Theme.photoRadius))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
+                Text("Grey rings and dashed lines: set \(i) points and outlines. Violet dots and solid lines: set \(j) points and outlines, moved onto the set \(i) photo.")
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.graduation)
                     .fixedSize(horizontal: false, vertical: true)
                 if dimmed {
                     Text("Faded because the photos did not line up.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.Colors.unreliable)
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.caution)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -306,7 +319,7 @@ struct ComparisonView: View {
             let missing = LandmarkType.allCases.filter { type in
                 (b.frontal?.landmarks?.missing.contains(type) ?? true) || (c.frontal?.landmarks?.missing.contains(type) ?? true)
             }
-            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
                 ForEach(comparison.deltas, id: \.name) { delta in
                     MetricDeltaRow(delta: delta,
                                    columnTitles: ("Set \(i)", "Set \(j)", "Change"),
@@ -317,13 +330,12 @@ struct ComparisonView: View {
             }
 
             Text(MetricGlossary.changeLine(earlier: i, later: j))
-                .font(.subheadline)
-                .foregroundStyle(Theme.Colors.slate)
+                .font(.support)
+                .foregroundStyle(Theme.Colors.graduation)
                 .fixedSize(horizontal: false, vertical: true)
 
             FlagList(flags: comparison.flags)
         }
-        .cardStyle()
     }
 
     /// Why a change is "Not measured". Contour overlap gets its own reason when outlines
@@ -348,8 +360,8 @@ struct ComparisonView: View {
     }
 }
 
-/// One oblique angle, two photos side by side. Looking only: no number is defined because
-/// both sides are never in one oblique photo.
+/// One oblique angle, two photos side by side on Plate. Looking only: no number is defined
+/// because both sides are never in one oblique photo.
 struct ObliqueCompareCard: View {
     @EnvironmentObject private var store: SessionStore
     let session: StudySession
@@ -362,39 +374,55 @@ struct ObliqueCompareCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
             Text("\(angle.displayName) (look, no numbers)")
-                .font(.stepTitle)
+                .font(.sectionTitle)
                 .foregroundStyle(Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             HStack(alignment: .top, spacing: Theme.Spacing.s) {
                 pane("Set \(i)", earlier)
                 pane("Set \(j)", later)
             }
             Text("Oblique photos are for looking only. Both sides are never in one oblique photo, so no number is defined.")
                 .font(.body)
-                .foregroundStyle(Theme.Colors.slate)
+                .foregroundStyle(Theme.Colors.graduation)
                 .fixedSize(horizontal: false, vertical: true)
             FlagList(flags: unique((earlier?.reliabilityFlags ?? []) + (later?.reliabilityFlags ?? [])))
         }
-        .cardStyle()
     }
 
     @ViewBuilder
     private func pane(_ title: String, _ capture: Capture?) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Text(title)
-                .font(.subheadline)
-                .foregroundStyle(Theme.Colors.slate)
+                .font(.support)
+                .foregroundStyle(Theme.Colors.graduation)
             if let capture, let image = store.image(for: capture, in: session) {
                 Image(uiImage: image).resizable().scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.Colors.plate)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
                 let warning = capture.quality.map { !$0.passed } ?? false
-                Text(QualityAdvice.headline(report: capture.quality, overridden: capture.qualityOverridden))
-                    .font(.subheadline)
-                    .foregroundStyle(warning ? Theme.Colors.caution : Theme.Colors.slate)
-                    .fixedSize(horizontal: false, vertical: true)
+                let headline = QualityAdvice.headline(report: capture.quality, overridden: capture.qualityOverridden)
+                if warning {
+                    Label {
+                        Text(headline)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .accessibilityHidden(true)
+                    }
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.caution)
+                } else {
+                    Text(headline)
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.graduation)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
-                Theme.Colors.hairline.frame(height: 160).clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(Text("Not taken").font(.subheadline).foregroundStyle(Theme.Colors.slate))
+                Theme.Colors.plate.frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
+                    .overlay(Text("Not taken").font(.support).foregroundStyle(Theme.Colors.plateGraduation))
             }
         }
         .frame(maxWidth: .infinity)
@@ -407,8 +435,9 @@ struct ObliqueCompareCard: View {
     }
 }
 
-/// An image with two landmark sets drawn in its pixel space: the earlier set filled in
-/// slate grey, the later set hollow in the guide colour after registration.
+/// An image with two landmark sets drawn in its pixel space: the earlier set as hollow
+/// grey rings (Graduation on Plate), the later set as filled violet dots (Marker on Plate,
+/// with a Plate halo) after registration onto the earlier photo.
 struct LandmarkOverlayImage: View {
     let image: UIImage
     let baseline: LandmarkSet
@@ -416,8 +445,9 @@ struct LandmarkOverlayImage: View {
     let transform: SimilarityTransform?
     let dimmed: Bool
 
-    private let earlierColor = Theme.Colors.slate
-    private let laterColor = Theme.Colors.guide
+    private let earlierColor = Theme.Colors.plateGraduation
+    private let laterColor = Theme.Colors.markerOnPlate
+    private let haloColor = Theme.Colors.plate
 
     var body: some View {
         GeometryReader { geo in
@@ -426,9 +456,9 @@ struct LandmarkOverlayImage: View {
                 Image(uiImage: image).resizable().scaledToFit()
                     .frame(width: geo.size.width, height: geo.size.height)
                 Canvas { ctx, _ in
-                    draw(ctx, set: baseline, transform: nil, filled: true, fit: fit)
+                    draw(ctx, set: baseline, transform: nil, isEarlier: true, fit: fit)
                     if let current, let transform {
-                        draw(ctx, set: current, transform: transform, filled: false, fit: fit)
+                        draw(ctx, set: current, transform: transform, isEarlier: false, fit: fit)
                     }
                 }
                 .opacity(dimmed ? 0.6 : 1)
@@ -448,23 +478,34 @@ struct LandmarkOverlayImage: View {
                 y: fit.minY + CGFloat(p.y) * fit.height / image.size.height)
     }
 
-    private func draw(_ ctx: GraphicsContext, set: LandmarkSet, transform: SimilarityTransform?, filled: Bool, fit: CGRect) {
+    private func draw(_ ctx: GraphicsContext, set: LandmarkSet, transform: SimilarityTransform?, isEarlier: Bool, fit: CGRect) {
         func map(_ p: Point2D) -> CGPoint { toView(transform?.apply(p) ?? p, fit: fit) }
-        let color = filled ? earlierColor : laterColor
+        let color = isEarlier ? earlierColor : laterColor
         for contour in [set.leftContour, set.rightContour] where contour.count > 1 {
             var path = Path()
             path.move(to: map(contour[0]))
             for p in contour.dropFirst() { path.addLine(to: map(p)) }
-            ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 1.5, dash: filled ? [] : [4, 3]))
+            if !isEarlier {
+                ctx.stroke(path, with: .color(haloColor), style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+            }
+            ctx.stroke(path, with: .color(color),
+                       style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round,
+                                          dash: isEarlier ? [4, 3] : []))
         }
         for (_, p) in set.points {
             let v = map(p)
-            let r: CGFloat = filled ? 5 : 7
-            let rect = CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r)
-            if filled {
-                ctx.fill(Path(ellipseIn: rect), with: .color(color))
-            } else {
+            if isEarlier {
+                // A hollow ring, large enough to show the later dot inside it.
+                let r: CGFloat = 7
+                let rect = CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r)
                 ctx.stroke(Path(ellipseIn: rect), with: .color(color), lineWidth: 2)
+            } else {
+                // A filled dot with a 2pt Plate halo.
+                let r: CGFloat = 4.5
+                let halo = CGRect(x: v.x - r - 2, y: v.y - r - 2, width: 2 * (r + 2), height: 2 * (r + 2))
+                ctx.fill(Path(ellipseIn: halo), with: .color(haloColor))
+                let rect = CGRect(x: v.x - r, y: v.y - r, width: 2 * r, height: 2 * r)
+                ctx.fill(Path(ellipseIn: rect), with: .color(color))
             }
         }
     }
