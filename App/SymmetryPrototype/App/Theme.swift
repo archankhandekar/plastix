@@ -1,19 +1,56 @@
 import SwiftUI
 
-/// "Scrub Light" theme tokens. One accent, quiet neutrals, dark capture surfaces.
-/// Colours adapt to light and dark appearance; the viewfinder is always dark.
+/// "Plumb" design tokens: an intraoperative measuring instrument, used with gloves under
+/// OR lights. One flat steel tray, one Drape axis, and a fixed dark Plate behind photos.
+///
+/// Provenance colour grammar: violet (marker) is what a hand placed, blue (drape) is what
+/// the app derived, and everything else is quiet steel. Colour never judges a value.
 enum Theme {
     enum Colors {
-        static let ink = Color(light: 0x17201F, dark: 0xEEF2F1)
-        static let paper = Color(light: 0xF6F7F5, dark: 0x101514)
-        static let surface = Color(light: 0xFFFFFF, dark: 0x1A2120)
-        static let slate = Color(light: 0x5C6B69, dark: 0x9FB0AD)
-        static let hairline = Color(light: 0xD9DEDC, dark: 0x2B3534)
-        static let accent = Color(light: 0x1E7F74, dark: 0x3FB3A6)
-        static let caution = Color(light: 0x8F5A12, dark: 0xE0A04A)
-        static let unreliable = Color(light: 0x8A3B3B, dark: 0xD97B7B)
-        static let capture = Color(hex: 0x0E1413)
-        static let guide = Color(hex: 0x3FB3A6)
+        // MARK: Adaptive (light / dark)
+
+        /// All primary text and readouts.
+        static let ink = Color(light: 0x162026, dark: 0xE3E8EB)
+        /// Screen background: brushed stainless, one flat surface.
+        static let tray = Color(light: 0xE7EAEC, dark: 0x0F1417)
+        /// Secondary text, ticks, scale end labels, axis labels.
+        static let graduation = Color(light: 0x56626A, dark: 0x95A2AA)
+        /// Derived geometry off-plate, the primary button fill, selected outlines.
+        static let drape = Color(light: 0x0A5C78, dark: 0x56B6D6)
+        /// Primary button label.
+        static let onDrape = Color(light: 0xFFFFFF, dark: 0x07090B)
+        /// Drape mixed into Tray: selected segment, active band. The only raised tone off-plate.
+        static let fieldWash = Color(light: 0xD2E3EA, dark: 0x14303B)
+        /// Hand-placed things off-plate. Never chrome or buttons.
+        static let marker = Color(light: 0x5A2A8C, dark: 0xB99BEA)
+        /// Warnings and Not measured reasons. Always with a glyph and a sentence.
+        static let caution = Color(light: 0x8A5200, dark: 0xE8A845)
+
+        // MARK: Fixed (identical in both appearances)
+
+        /// Lightbox behind every photo, the viewfinder and the plate.
+        static let plate = Color(hex: 0x0C1013)
+        static let plateInk = Color(hex: 0xE3E8EB)
+        static let plateGraduation = Color(hex: 0x95A2AA)
+        /// Hand-placed marks on Plate, always with a 2pt Plate-coloured halo.
+        static let markerOnPlate = Color(hex: 0xC9A8FF)
+        /// Axis, guides and the mirrored outline on Plate.
+        static let drapeOnPlate = Color(hex: 0x56B6D6)
+        static let cautionOnPlate = Color(hex: 0xE8A845)
+        /// The white caliper: always "the difference itself".
+        static let caliper = Color(hex: 0xFFFFFF)
+
+        // MARK: Compatibility aliases (screens not yet restyled keep compiling)
+
+        static let paper = tray
+        static let surface = tray
+        static let slate = graduation
+        /// Placeholders only. Rows are separated by space, never by hairlines.
+        static let hairline = Color(light: 0xC6CDD2, dark: 0x27313A)
+        static let accent = drape
+        static let unreliable = caution
+        static let capture = plate
+        static let guide = drapeOnPlate
         static let guideMuted = Color.white.opacity(0.55)
     }
 
@@ -23,11 +60,23 @@ enum Theme {
         static let m: CGFloat = 16
         static let l: CGFloat = 24
         static let xl: CGFloat = 40
+        /// Screen margin.
+        static let margin: CGFloat = 20
+        /// Between gauge rows.
+        static let gaugeGap: CGFloat = 24
+        /// Between sections.
+        static let section: CGFloat = 40
     }
 
-    /// Minimum tap target for gloved use.
+    /// Minimum hit area for gloved use.
     static let tapTarget: CGFloat = 56
-    static let cornerRadius: CGFloat = 10
+    /// Height of the one primary action per screen.
+    static let primaryHeight: CGFloat = 64
+    static let shutterSize: CGFloat = 80
+    /// Buttons, fields and segments.
+    static let cornerRadius: CGFloat = 8
+    /// Photos and the plate (steel-tray corner).
+    static let photoRadius: CGFloat = 4
 }
 
 extension Color {
@@ -51,56 +100,54 @@ extension Color {
     }
 }
 
-extension Font {
-    /// Numbers with tabular digits so ± columns line up.
-    static let metric = Font.system(.body, design: .default).monospacedDigit()
-    /// Kept for compatibility; no view may use it (it is below the readable floor).
-    static let metricSmall = Font.system(.caption, design: .default).monospacedDigit()
-
-    /// Screen titles inside content, e.g. the research notice.
-    static let screenTitle = Font.title2.weight(.semibold)
-    /// Card titles, step titles, set titles and section headings.
-    static let stepTitle = Font.title3.weight(.semibold)
-    /// All explanatory copy.
-    static let readable = Font.body
-    /// Single metric values in MetricRow.
-    static let metricLarge = Font.system(.title3, design: .default).monospacedDigit()
-    /// Smallest font any view may use for user-facing text.
-    static let readableFloor = Font.subheadline
-}
-
 extension Theme.Colors {
-    /// Completed-step ticks only.
-    static let done = accent
-    /// Cards and step lists share one surface.
-    static let cardBackground = surface
+    /// Completed-step ticks.
+    static let done = drape
+    /// There are no cards: the old card surface is the tray itself.
+    static let cardBackground = tray
 }
 
-/// A quiet grouping container: surface background, hairline stroke, rounded corners.
-/// Cards group related content; they are never a dashboard.
+/// Formerly a card. Plumb has no cards: this is a flat, full-width group with a little
+/// vertical breathing room, no background and no stroke.
 struct CardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(Theme.Spacing.m)
+            .padding(.vertical, Theme.Spacing.s)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.Colors.cardBackground, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Theme.Colors.hairline, lineWidth: 1))
     }
 }
 
-/// Outlined capsule button for the dark camera screen (Stop, Match pose).
+/// Outlined button for the dark camera screen (Stop, Match pose).
 struct OutlinedCaptureButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
+            .font(.actionLabel)
             .foregroundStyle(.white)
             .padding(.horizontal, Theme.Spacing.m)
             .frame(minHeight: Theme.tapTarget)
-            .background(Capsule().stroke(Color.white, lineWidth: 1.5))
-            .contentShape(Capsule())
+            .background(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Color.white, lineWidth: 1.5))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.5)
+    }
+}
+
+/// Outlined button for use on Plate (photos, the symmetry plate, the viewfinder).
+struct PlateButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.actionLabel)
+            .foregroundStyle(Theme.Colors.plateInk)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, Theme.Spacing.m)
+            .frame(minWidth: Theme.tapTarget, minHeight: Theme.tapTarget)
+            .background(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                .stroke(Theme.Colors.plateInk, lineWidth: 1.5))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
     }
 }
 
@@ -114,14 +161,15 @@ extension View {
     }
 }
 
-/// Rounded text field style shared by forms.
+/// Text field style shared by forms: 56pt, 1.5pt Graduation outline, 8pt corners.
 struct FieldStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, Theme.Spacing.m)
             .frame(minHeight: Theme.tapTarget)
-            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Theme.Colors.hairline))
+            .background(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                .stroke(Theme.Colors.graduation, lineWidth: 1.5))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
     }
 }
 
@@ -129,28 +177,60 @@ extension View {
     func fieldStyle() -> some View { modifier(FieldStyle()) }
 }
 
-/// The primary action: one per screen, always the accent.
+/// The primary action: one per screen, full width, 64pt, Drape fill.
+/// A destructive action is never red: it renders as the secondary outline with a trash glyph.
 struct PrimaryButtonStyle: ButtonStyle {
     var isDestructive = false
+
+    init(isDestructive: Bool = false) {
+        self.isDestructive = isDestructive
+    }
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: Theme.tapTarget)
-            .foregroundStyle(.white)
-            .background(isDestructive ? Theme.Colors.unreliable : Theme.Colors.accent,
-                        in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-            .opacity(configuration.isPressed ? 0.8 : 1)
+        if isDestructive {
+            SecondaryButtonStyle.body(configuration: configuration, isEnabled: isEnabled, leadingSymbol: "trash")
+        } else {
+            configuration.label
+                .font(.actionLabel)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.m)
+                .frame(maxWidth: .infinity, minHeight: Theme.primaryHeight)
+                .foregroundStyle(Theme.Colors.onDrape)
+                .background(Theme.Colors.drape, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+        }
     }
 }
 
+/// 56pt, 1.5pt Ink outline, clear fill, Ink label.
 struct SecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.headline)
-            .frame(maxWidth: .infinity, minHeight: Theme.tapTarget)
-            .foregroundStyle(Theme.Colors.ink)
-            .background(Theme.Colors.surface, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(Theme.Colors.hairline))
-            .opacity(configuration.isPressed ? 0.8 : 1)
+        Self.body(configuration: configuration, isEnabled: isEnabled, leadingSymbol: nil)
+    }
+
+    @ViewBuilder
+    fileprivate static func body(configuration: Configuration, isEnabled: Bool, leadingSymbol: String?) -> some View {
+        HStack(spacing: Theme.Spacing.s) {
+            if let leadingSymbol {
+                Image(systemName: leadingSymbol)
+                    .accessibilityHidden(true)
+            }
+            configuration.label
+        }
+        .font(.actionLabel)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, Theme.Spacing.m)
+        .frame(maxWidth: .infinity, minHeight: Theme.tapTarget)
+        .foregroundStyle(Theme.Colors.ink)
+        .background(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+            .stroke(Theme.Colors.ink, lineWidth: 1.5))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+        .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
     }
 }

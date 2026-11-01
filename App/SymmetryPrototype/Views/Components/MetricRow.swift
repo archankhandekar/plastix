@@ -2,7 +2,8 @@ import SwiftUI
 import SymmetryCore
 
 /// One metric with value ± uncertainty. "Not measured" when nil. Never colours a value
-/// as good or bad, and never shrinks text: a long name wraps instead.
+/// as good or bad, and never shrinks text: a long name wraps instead. Flat, separated from
+/// its neighbours by space alone.
 struct MetricRow: View {
     let name: String
     let measurement: MetricValue?
@@ -26,31 +27,31 @@ struct MetricRow: View {
             }
             if let explanation {
                 Text(explanation)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.Colors.slate)
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.graduation)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if measurement == nil, let reason {
-                Text(reason)
-                    .font(.subheadline)
+                Label(reason, systemImage: "exclamationmark.triangle")
+                    .font(.support)
                     .foregroundStyle(Theme.Colors.caution)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, Theme.Spacing.xs)
+        .padding(.vertical, Theme.Spacing.s)
         .accessibilityElement(children: .combine)
     }
 
     private var nameText: some View {
         Text(name)
-            .font(.body)
+            .font(.body.weight(.semibold))
             .foregroundStyle(Theme.Colors.ink)
     }
 
     private var valueText: some View {
         Text(MetricFormatter.text(measurement))
-            .font(.metricLarge)
-            .foregroundStyle(measurement == nil ? Theme.Colors.slate : Theme.Colors.ink)
+            .font(.readoutRow)
+            .foregroundStyle(measurement == nil ? Theme.Colors.graduation : Theme.Colors.ink)
     }
 }
 
@@ -68,13 +69,13 @@ struct MetricDeltaRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             Text(delta.name)
-                .font(.body)
+                .font(.body.weight(.semibold))
                 .foregroundStyle(Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
             if let explanation {
                 Text(explanation)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.Colors.slate)
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.graduation)
                     .fixedSize(horizontal: false, vertical: true)
             }
             line(columnTitles.0, delta.baseline, emphasised: false)
@@ -82,30 +83,30 @@ struct MetricDeltaRow: View {
             line(columnTitles.2, delta.delta, emphasised: true)
             if let change = delta.delta, abs(change.value) <= change.uncertainty {
                 Text(MetricGlossary.withinUncertaintyLine)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.Colors.slate)
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.graduation)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if delta.delta == nil, let reason {
-                Text(reason)
-                    .font(.subheadline)
+                Label(reason, systemImage: "exclamationmark.triangle")
+                    .font(.support)
                     .foregroundStyle(Theme.Colors.caution)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.vertical, Theme.Spacing.xs)
+        .padding(.vertical, Theme.Spacing.s)
         .accessibilityElement(children: .combine)
     }
 
     private func line(_ title: String, _ m: MetricValue?, emphasised: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
             Text(title)
-                .font(.subheadline)
-                .foregroundStyle(Theme.Colors.slate)
+                .font(.support)
+                .foregroundStyle(Theme.Colors.graduation)
             Spacer(minLength: 0)
             Text(MetricFormatter.text(m))
-                .font(emphasised ? .metric.weight(.semibold) : .metric)
-                .foregroundStyle(m == nil ? Theme.Colors.slate : Theme.Colors.ink)
+                .font(emphasised ? .readoutRow.weight(.semibold) : .readoutRow)
+                .foregroundStyle(m == nil ? Theme.Colors.graduation : Theme.Colors.ink)
                 .opacity(dimmed ? 0.6 : 1)
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.trailing)

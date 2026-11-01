@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The single "Next: <verb>" button every session-level screen ends with. Callers place
-/// it in `.safeAreaInset(edge: .bottom)`.
+/// The single verb-first action every session-level screen ends with: a 64pt Drape button
+/// on the flat tray. Callers place it in `.safeAreaInset(edge: .bottom)`.
 struct NextActionBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -29,7 +29,8 @@ struct NextActionBar: View {
                     .buttonStyle(SecondaryButtonStyle())
             }
         }
-        .padding(Theme.Spacing.m)
-        .background(.bar)
+        .padding(.horizontal, Theme.Spacing.margin)
+        .padding(.vertical, Theme.Spacing.m)
+        .background(Theme.Colors.tray)
     }
 }

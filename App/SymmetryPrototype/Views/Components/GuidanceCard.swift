@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// A short piece of guidance with an optional title and optional 56pt action(s).
+/// Flat: no card, no background and no stroke; a leading glyph carries the kind.
 /// `.info` is quiet, `.caution` needs attention but can proceed, `.unreliable` means the
-/// numbers cannot be trusted, `.dark` is for the camera screen. Colour never says a
-/// measurement is good or bad.
+/// numbers need care (shown as caution: there is no red), `.dark` sits on Plate with a
+/// scrim. Colour never says a measurement is good or bad.
 struct GuidanceCard<Action: View>: View {
     enum Kind { case info, caution, unreliable, dark }
 
@@ -62,11 +63,11 @@ struct GuidanceCard<Action: View>: View {
                 .padding(.leading, iconColumnWidth)
             }
         }
-        .padding(Theme.Spacing.m)
+        .padding(.vertical, Theme.Spacing.s)
+        .padding(.horizontal, kind == .dark ? Theme.Spacing.m : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(textColor)
         .background(background, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).stroke(strokeColor, lineWidth: 1))
     }
 
     // MARK: - Pieces
@@ -83,12 +84,13 @@ struct GuidanceCard<Action: View>: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 0) {
             Image(systemName: symbolName)
-                .font(.stepTitle)
+                .font(title == nil ? .body : .sectionTitle)
                 .foregroundStyle(iconColor)
                 .frame(width: iconColumnWidth, alignment: .leading)
+                .accessibilityHidden(true)
             if let title {
                 Text(title)
-                    .font(.stepTitle)
+                    .font(.sectionTitle)
                     .foregroundStyle(textColor)
                     .fixedSize(horizontal: false, vertical: true)
             } else if headerLeadsWithFirstLine, let first = lines.first {
@@ -99,9 +101,10 @@ struct GuidanceCard<Action: View>: View {
             }
             if collapsible {
                 Spacer(minLength: Theme.Spacing.s)
-                Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(textColor)
+                // Words, not a chevron: buttons carry no arrows.
+                Text(expanded ? "Hide" : "Show")
+                    .font(.support.weight(.semibold))
+                    .foregroundStyle(kind == .dark ? Theme.Colors.plateInk : Theme.Colors.drape)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -123,35 +126,25 @@ struct GuidanceCard<Action: View>: View {
     private var symbolName: String {
         switch kind {
         case .info, .dark: return "info.circle"
-        case .caution: return "exclamationmark.triangle.fill"
-        case .unreliable: return "xmark.octagon.fill"
+        case .caution, .unreliable: return "exclamationmark.triangle"
         }
     }
 
     private var iconColor: Color {
         switch kind {
-        case .info: return Theme.Colors.slate
-        case .caution: return Theme.Colors.caution
-        case .unreliable: return Theme.Colors.unreliable
-        case .dark: return .white
+        case .info: return Theme.Colors.graduation
+        case .caution, .unreliable: return Theme.Colors.caution
+        case .dark: return Theme.Colors.plateInk
         }
     }
 
     private var textColor: Color {
-        kind == .dark ? .white : Theme.Colors.ink
+        kind == .dark ? Theme.Colors.plateInk : Theme.Colors.ink
     }
 
+    /// Only the on-Plate kind has a backing: a black scrim so it reads over the viewfinder.
     private var background: Color {
-        kind == .dark ? Color.black.opacity(0.7) : Theme.Colors.cardBackground
-    }
-
-    private var strokeColor: Color {
-        switch kind {
-        case .info: return Theme.Colors.hairline
-        case .caution: return Theme.Colors.caution
-        case .unreliable: return Theme.Colors.unreliable
-        case .dark: return .clear
-        }
+        kind == .dark ? Color.black.opacity(0.75) : Color.clear
     }
 }
 

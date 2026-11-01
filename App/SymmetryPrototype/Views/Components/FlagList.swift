@@ -20,7 +20,7 @@ enum QualityAdvice {
         case .blurry: return "The photo is blurred. Hold still, let the camera focus, then retake."
         case .overexposed: return "Parts of the photo are too bright. Reduce the overhead light or move the lamp, then retake."
         case .underexposed: return "Parts of the photo are too dark. Add light, then retake."
-        case .tilted: return "The phone was tilted. Watch the level line until it turns teal, then retake."
+        case .tilted: return "The phone was tilted. Watch the level line until it turns blue, then retake."
         }
     }
 
@@ -55,7 +55,7 @@ enum ReliabilityAdvice {
         }
     }
 
-    /// True when the numbers cannot be trusted at all (unreliable colour); otherwise caution.
+    /// True when the numbers cannot be trusted at all; otherwise they only need care.
     static func isBlocking(_ f: ReliabilityFlag) -> Bool {
         f == .degenerateMidline || f == .registrationResidualHigh
     }
@@ -74,19 +74,19 @@ struct QualityAdviceList: View {
                 if report.passed {
                     if showsPassLine {
                         Label(QualityAdvice.passedText(report), systemImage: "checkmark.circle")
-                            .foregroundStyle(Theme.Colors.accent)
+                            .foregroundStyle(Theme.Colors.drape)
                     }
                 } else {
                     ForEach(report.failures, id: \.self) { f in
-                        Label(QualityAdvice.text(f), systemImage: "exclamationmark.triangle.fill")
+                        Label(QualityAdvice.text(f), systemImage: "exclamationmark.triangle")
                             .foregroundStyle(Theme.Colors.caution)
                     }
                     if overridden {
-                        Text(QualityAdvice.kept).foregroundStyle(Theme.Colors.slate)
+                        Text(QualityAdvice.kept).foregroundStyle(Theme.Colors.graduation)
                     }
                 }
             } else {
-                Text(QualityAdvice.notChecked).foregroundStyle(Theme.Colors.slate)
+                Text(QualityAdvice.notChecked).foregroundStyle(Theme.Colors.graduation)
             }
         }
         .font(.body)
@@ -107,14 +107,15 @@ struct FlagList: View {
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                 if let heading {
                     Text(heading)
-                        .font(.stepTitle)
+                        .font(.sectionTitle)
                         .foregroundStyle(Theme.Colors.ink)
                 }
                 ForEach(flags, id: \.self) { flag in
-                    Label(ReliabilityAdvice.text(flag),
-                          systemImage: ReliabilityAdvice.isBlocking(flag) ? "xmark.octagon.fill" : "exclamationmark.triangle.fill")
+                    // One glyph and one colour for every flag: there is no red, and the
+                    // sentence says how much care is needed.
+                    Label(ReliabilityAdvice.text(flag), systemImage: "exclamationmark.triangle")
                         .font(.body)
-                        .foregroundStyle(ReliabilityAdvice.isBlocking(flag) ? Theme.Colors.unreliable : Theme.Colors.caution)
+                        .foregroundStyle(Theme.Colors.caution)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

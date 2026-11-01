@@ -11,18 +11,17 @@ struct ResearchNoticeView: View {
         "Everything stays on this phone. Use only the study code, never a name.",
     ]
 
-    private let steps = [
-        "Take 3 photos of the patient at one stage of the operation",
-        "Mark 6 points on the frontal photo",
-        "Repeat at a later stage and compare the two",
-        "Export a report for the study",
-    ]
+    private let steps = ["Take photos", "Mark points", "See left and right", "Export"]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.l) {
                 Text("Research use only")
                     .font(.screenTitle)
+
+                Text("Research prototype. Not a medical device.")
+                    .font(.body.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                     ForEach(bullets, id: \.self) { line in
@@ -37,23 +36,24 @@ struct ResearchNoticeView: View {
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                     Text("How it works")
-                        .font(.stepTitle)
-                    StepListView(staticTitles: steps)
+                        .font(.sectionTitle)
+                    StepRail(staticTitles: steps)
                 }
 
                 Text("Left and right always mean the patient's left and right.")
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(Theme.Spacing.l)
+            .padding(Theme.Spacing.margin)
         }
-        .background(Theme.Colors.paper)
+        .background(Theme.Colors.tray)
         .foregroundStyle(Theme.Colors.ink)
         .safeAreaInset(edge: .bottom) {
             Button("I understand, start") { settings.researchNoticeAccepted = true }
                 .buttonStyle(PrimaryButtonStyle())
-                .padding(Theme.Spacing.m)
-                .background(.bar)
+                .padding(.horizontal, Theme.Spacing.margin)
+                .padding(.vertical, Theme.Spacing.m)
+                .background(Theme.Colors.tray)
         }
     }
 }
@@ -64,13 +64,19 @@ struct ResearchNoticeBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(alignment: .top, spacing: Theme.Spacing.s) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
                 Image(systemName: "info.circle")
-                Text("Research prototype. Not clinically validated. Values are image geometry, not physical measurements.")
-                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Research prototype. Not a medical device.")
+                        .fontWeight(.semibold)
+                    Text("Not clinically validated. Values are image geometry, not physical measurements.")
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.subheadline)
-            .foregroundStyle(Theme.Colors.slate)
+            .font(.support)
+            .foregroundStyle(Theme.Colors.graduation)
+            .accessibilityElement(children: .combine)
             if showsExplainerLink {
                 NavigationLink {
                     MetricExplainerSheet()

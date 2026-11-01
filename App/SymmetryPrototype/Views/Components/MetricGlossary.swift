@@ -13,6 +13,10 @@ enum MetricGlossary {
         "Change = set \(j) minus set \(i), with both uncertainties combined."
     }
     static let withinUncertaintyLine = "The change is smaller than its ±, so it cannot be told apart from zero."
+    /// The provenance colour grammar, in one sentence.
+    static let provenanceLine = "Violet is what you marked. Blue is what the app drew from your marks."
+    /// How sides sit on screen: the same as a frontal photo.
+    static let sidesLine = "Left and right are the patient's. Patient left is on the right of the photo."
 
     /// Metric names in `FrontalMetrics.namedMetrics` order.
     static let metricNames: [String] = [
@@ -112,10 +116,11 @@ struct HowToReadCard: View {
 }
 
 /// "What the numbers mean": the glossary lines, the six metrics, and a link to the definitions.
+/// Flat sections separated by space, on the tray.
 struct MetricExplainerSheet: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.l) {
                 Text("What the numbers mean")
                     .font(.screenTitle)
                     .foregroundStyle(Theme.Colors.ink)
@@ -124,14 +129,16 @@ struct MetricExplainerSheet: View {
                     glossaryLine(MetricGlossary.referenceLengthLine)
                     glossaryLine(MetricGlossary.uncertaintyLine)
                     glossaryLine(MetricGlossary.signLine)
+                    glossaryLine(MetricGlossary.sidesLine)
+                    glossaryLine(MetricGlossary.provenanceLine)
                 }
                 .cardStyle()
 
-                VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.l) {
                     ForEach(MetricGlossary.metricNames, id: \.self) { name in
                         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                             Text(name)
-                                .font(.stepTitle)
+                                .font(.sectionTitle)
                                 .foregroundStyle(Theme.Colors.ink)
                             Text(MetricGlossary.meaning(for: name))
                                 .font(.body)
@@ -152,15 +159,16 @@ struct MetricExplainerSheet: View {
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.body)
-                            .foregroundStyle(Theme.Colors.slate)
+                            .foregroundStyle(Theme.Colors.graduation)
+                            .accessibilityHidden(true)
                     }
                     .tapTarget()
                 }
                 .cardStyle()
             }
-            .padding(Theme.Spacing.l)
+            .padding(Theme.Spacing.margin)
         }
-        .background(Theme.Colors.paper)
+        .background(Theme.Colors.tray)
         .navigationTitle("What the numbers mean")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -181,9 +189,9 @@ struct DefinitionsView: View {
                 .font(.body)
                 .foregroundStyle(Theme.Colors.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(Theme.Spacing.l)
+                .padding(Theme.Spacing.margin)
         }
-        .background(Theme.Colors.paper)
+        .background(Theme.Colors.tray)
         .navigationTitle("Definitions")
         .navigationBarTitleDisplayMode(.inline)
     }
