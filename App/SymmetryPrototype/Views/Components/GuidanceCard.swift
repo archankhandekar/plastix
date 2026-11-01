@@ -72,7 +72,14 @@ struct GuidanceCard<Action: View>: View {
 
     // MARK: - Pieces
 
-    private let iconColumnWidth: CGFloat = 28
+    /// The symbol column grows with the text, so a large-type symbol never runs into the
+    /// first word. Body-sized symbol without a title, title-sized with one.
+    @ScaledMetric(relativeTo: .body) private var bodyIconWidth: CGFloat = 22
+    @ScaledMetric(relativeTo: .title3) private var titleIconWidth: CGFloat = 26
+    private var iconWidth: CGFloat { title == nil ? bodyIconWidth : titleIconWidth }
+    private let iconGap: CGFloat = Theme.Spacing.s
+    /// Body lines start where the header text starts.
+    private var iconColumnWidth: CGFloat { iconWidth + iconGap }
 
     /// Without a title the first line sits beside the symbol, so the body shows the rest.
     private var headerLeadsWithFirstLine: Bool { title == nil && !collapsible }
@@ -82,11 +89,11 @@ struct GuidanceCard<Action: View>: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: iconGap) {
             Image(systemName: symbolName)
                 .font(title == nil ? .body : .sectionTitle)
                 .foregroundStyle(iconColor)
-                .frame(width: iconColumnWidth, alignment: .leading)
+                .frame(width: iconWidth, alignment: .leading)
                 .accessibilityHidden(true)
             if let title {
                 Text(title)

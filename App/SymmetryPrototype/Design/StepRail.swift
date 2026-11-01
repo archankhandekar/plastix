@@ -61,6 +61,12 @@ struct StepRail: View {
         }
     }
 
+    /// A rail with taps keeps every row at the 56pt tap height, so actionable and
+    /// non-actionable rows share one rhythm. A static rail (the research notice) is a plain
+    /// list and uses a tighter row.
+    private var rowHeight: CGFloat { onTap == nil ? Self.staticRowHeight : Theme.tapTarget }
+    private static let staticRowHeight: CGFloat = 40
+
     @ViewBuilder
     private func wrapIfActionable<Content: View>(_ item: Item, @ViewBuilder content: () -> Content) -> some View {
         if item.isActionable, let onTap {
@@ -89,7 +95,8 @@ struct StepRail: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, Theme.Spacing.xs)
-        .tapTarget()
+        .frame(maxWidth: .infinity, minHeight: rowHeight, alignment: .leading)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText(item))
         .accessibilityAddTraits(item.state == .current ? [.isSelected] : [])
@@ -104,7 +111,7 @@ struct StepRail: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, Theme.Spacing.s)
-        .frame(minHeight: Theme.tapTarget)
+        .frame(minHeight: rowHeight)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText(item))

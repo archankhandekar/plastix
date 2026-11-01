@@ -19,9 +19,7 @@ struct ResearchNoticeView: View {
                 Text("Research use only")
                     .font(.screenTitle)
 
-                Text("Research prototype. Not a medical device.")
-                    .font(.body.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+                sidesCallout
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.s) {
                     ForEach(bullets, id: \.self) { line in
@@ -39,22 +37,55 @@ struct ResearchNoticeView: View {
                         .font(.sectionTitle)
                     StepRail(staticTitles: steps)
                 }
-
-                Text("Left and right always mean the patient's left and right.")
-                    .font(.body)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(Theme.Spacing.margin)
         }
         .background(Theme.Colors.tray)
         .foregroundStyle(Theme.Colors.ink)
         .safeAreaInset(edge: .bottom) {
-            Button("I understand, start") { settings.researchNoticeAccepted = true }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding(.horizontal, Theme.Spacing.margin)
-                .padding(.vertical, Theme.Spacing.m)
-                .background(Theme.Colors.tray)
+            NextActionBar(title: "I understand, start") { settings.researchNoticeAccepted = true }
         }
+    }
+
+    /// The bilateral convention, the line that matters most in this app: the sentence, then
+    /// the two sides drawn the way every screen shows them, either side of the midline.
+    private var sidesCallout: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            Text("Left and right always mean the patient's left and right.")
+                .font(.body.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            PatientSidesKey()
+                .padding(.vertical, Theme.Spacing.xs)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The two sides drawn the way every screen shows them: patient right in the screen-left
+/// half and patient left in the screen-right half, either side of the midline axis.
+struct PatientSidesKey: View {
+    var body: some View {
+        FacingColumns {
+            sideLabel("Patient right", place: "Left of the screen", alignment: .leading)
+        } patientLeft: {
+            sideLabel("Patient left", place: "Right of the screen", alignment: .trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Patient right is on the left of the screen and patient left on the right, as in a frontal photo.")
+    }
+
+    private func sideLabel(_ side: String, place: String, alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 2) {
+            Text(side)
+                .font(.sideLabel)
+                .foregroundStyle(Theme.Colors.ink)
+            Text(place)
+                .font(.support)
+                .foregroundStyle(Theme.Colors.graduation)
+        }
+        .multilineTextAlignment(alignment == .leading ? .leading : .trailing)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
     }
 }
 
