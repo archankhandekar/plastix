@@ -10,10 +10,10 @@ final class CameraService: NSObject, ObservableObject, AVCapturePhotoCaptureDele
 
         var errorDescription: String? {
             switch self {
-            case .notAuthorized: return "Camera access is off. Turn it on in Settings to capture."
+            case .notAuthorized: return "Camera access is off. Turn it on in Settings to take photos."
             case .noCamera: return "No rear camera is available on this device."
             case .configurationFailed: return "The camera could not be configured."
-            case .captureFailed: return "The photo could not be captured. Try again."
+            case .captureFailed: return "The photo could not be taken. Try again."
             }
         }
     }
