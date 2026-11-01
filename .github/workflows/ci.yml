@@ -58,6 +58,65 @@ jobs:
             > build/xcodebuild.log 2>&1 || true
           grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log | sort -u | head -n 80 || true
           grep -q "BUILD SUCCEEDED" build/xcodebuild.log
+      - name: Build the app for devices (Release, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project SymmetryPrototype.xcodeproj \
+            -scheme SymmetryPrototype \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" \
+            >> build/xcodebuild.log 2>&1 || true
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log | tail -n 40 || true
+          test -f build/DerivedData/Build/Products/Release-iphoneos/SymmetryPrototype.app/SymmetryPrototype
+      - name: Release binary contains no route harness
+        run: |
+          binary=build/DerivedData/Build/Products/Release-iphoneos/SymmetryPrototype.app/SymmetryPrototype
+          if strings "$binary" | grep -E 'UIRoute|UIDemo|RouteHarness'; then
+            echo "::error::The Release binary contains DEBUG route-harness strings."
+            exit 1
+          fi
+          echo "No route-harness strings in the Release binary."
+      - name: Route harness is referenced only in DEBUG code
+        run: |
+          # Every file under Debug/ is wrapped in #if DEBUG. Anywhere else, LaunchRoute,
+          # RouteHarness and UIRoute may appear only between #if DEBUG and its #else/#endif.
+          status=0
+          for f in $(find App/SymmetryPrototype -name '*.swift' -not -path 'App/SymmetryPrototype/Debug/*'); do
+            awk -v file="$f" '
+              /^[ \t]*#if[ \t]+DEBUG/ { depth++; debug[depth] = 1; next }
+              /^[ \t]*#if/ { depth++; debug[depth] = 0; next }
+              /^[ \t]*#else/ { if (depth > 0 && debug[depth] == 1) debug[depth] = 2; next }
+              /^[ \t]*#endif/ { if (depth > 0) depth--; next }
+              /LaunchRoute|RouteHarness|UIRoute/ {
+                inside = 0
+                for (i = 1; i <= depth; i++) if (debug[i] == 1) inside = 1
+                if (!inside) { printf "%s:%d: harness reference outside #if DEBUG\n", file, NR; bad = 1 }
+              }
+              END { exit bad }
+            ' "$f" || status=1
+          done
+          for f in $(find App/SymmetryPrototype/Debug -name '*.swift'); do
+            first=$(grep -v '^[[:space:]]*$' "$f" | grep -v '^[[:space:]]*//' | head -n 1)
+            last=$(grep -v '^[[:space:]]*$' "$f" | tail -n 1)
+            case "$first" in "#if DEBUG"*) ;; *) echo "$f: does not start with #if DEBUG"; status=1 ;; esac
+            case "$last" in "#endif"*) ;; *) echo "$f: does not end with #endif"; status=1 ;; esac
+          done
+          exit $status
+      - name: Run the app unit tests on the simulator
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project SymmetryPrototype.xcodeproj \
+            -scheme SymmetryPrototype \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            > build/xcodebuild-test.log 2>&1 || true
+          grep -E "error:|failed|Executed|TEST (SUCCEEDED|FAILED)" build/xcodebuild-test.log | tail -n 60 || true
+          grep -q "TEST SUCCEEDED" build/xcodebuild-test.log
       - name: Report compiler errors where the API can read them
         if: failure()
         env:
@@ -93,4 +152,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-log
-          path: build/xcodebuild.log
+          path: |
+            build/xcodebuild.log
+            build/xcodebuild-test.log
