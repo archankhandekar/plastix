@@ -25,12 +25,12 @@ struct SettingsView: View {
             .flatRows()
 
             Section {
-                slider("Point placement wobble", value: $settings.landmarkSigmaRatio, range: 0.005...0.05, step: 0.005,
+                slider("Point placement uncertainty (share of L)", value: $settings.landmarkSigmaRatio, range: 0.005...0.05, step: 0.005,
                        format: "%.3f L", defaultValue: FrontalMetricsCalculator.defaultLandmarkSigmaRatio)
             } header: {
                 header("Uncertainty")
             } footer: {
-                footer("How much a hand-placed point is assumed to wobble, as a share of L. This drives the ± on every point-based value; Contour overlap uses a fixed grid ±.")
+                footer("How far a hand-placed point may be off, as a share of L. L is the distance from the sternal notch to the midline bottom in each photo. This drives the ± on every point-based value; Contour overlap uses a fixed grid ±. What the numbers mean, under About, says more.")
             }
             .flatRows()
 
@@ -140,6 +140,8 @@ struct SettingsView: View {
             .flatRows()
         }
         .scrollContentBackground(.hidden)
+        // No grouped-card inset: rows, headers and footers carry the 20pt margin themselves.
+        .contentMargins(.horizontal, 0, for: .scrollContent)
         .background(Theme.Colors.tray)
         .tint(Theme.Colors.drape)
         .navigationTitle("Settings")
@@ -182,6 +184,7 @@ struct SettingsView: View {
             .font(.support)
             .foregroundStyle(Theme.Colors.graduation)
             .textCase(nil)
+            .listRowInsets(Self.marginInsets)
     }
 
     private func footer(_ text: String) -> some View {
@@ -189,7 +192,12 @@ struct SettingsView: View {
             .font(.support)
             .foregroundStyle(Theme.Colors.graduation)
             .fixedSize(horizontal: false, vertical: true)
+            .listRowInsets(Self.marginInsets)
     }
+
+    /// Headers and footers on the same 20pt margin as the rows.
+    private static let marginInsets = EdgeInsets(top: Theme.Spacing.s, leading: Theme.Spacing.margin,
+                                                 bottom: Theme.Spacing.s, trailing: Theme.Spacing.margin)
 
     private func rowLabel(_ title: String) -> some View {
         Text(title)
@@ -204,16 +212,28 @@ struct SettingsView: View {
                         format: String, defaultValue: Double) -> some View {
         let isDefault = abs(value.wrappedValue - defaultValue) < 1e-9
         let valueText = String(format: format, value.wrappedValue) + (isDefault ? " (default)" : "")
+        let titleText = Text(title)
+            .font(.body)
+            .foregroundStyle(Theme.Colors.ink)
+        let valueLabel = Text(valueText)
+            .font(.readoutRow)
+            .foregroundStyle(Theme.Colors.graduation)
         return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title)
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer()
-                Text(valueText)
-                    .font(.readoutRow)
-                    .foregroundStyle(Theme.Colors.graduation)
+            // Title and value on one line when both fit unbroken; otherwise the value goes
+            // under the title, so neither is squeezed into a narrow column.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
+                    titleText.fixedSize()
+                    Spacer(minLength: 0)
+                    valueLabel.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    titleText
+                        .fixedSize(horizontal: false, vertical: true)
+                    valueLabel
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             Slider(value: value, in: range, step: step) { Text(title) }
                 .tint(Theme.Colors.drape)
@@ -223,9 +243,12 @@ struct SettingsView: View {
 }
 
 private extension View {
-    /// Settings rows sit straight on the tray: no grouped card behind them and no separators.
+    /// Settings rows sit straight on the tray: no grouped card behind them and no separators,
+    /// on the same 20pt margin as every other screen.
     func flatRows() -> some View {
         listRowBackground(Theme.Colors.tray)
             .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: Theme.Spacing.s, leading: Theme.Spacing.margin,
+                                      bottom: Theme.Spacing.s, trailing: Theme.Spacing.margin))
     }
 }

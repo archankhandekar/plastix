@@ -16,6 +16,7 @@ struct SessionView: View {
     let sessionID: UUID
 
     @State private var confirmDelete = false
+    @State private var confirmReset = false
     @State private var showingNewSet = false
     @State private var newSetContext: NewSetContext?
     @State private var pendingSet: CaptureSet?
@@ -63,18 +64,7 @@ struct SessionView: View {
     private func content(session: StudySession, wizard: SessionWizard) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.Spacing.section) {
-                if isPractice {
-                    PracticeTourSection(tour: PracticeTour(session: session, sigma: sigma),
-                                        onSelect: { task in performTour(task, session: session, wizard: wizard) },
-                                        onReset: resetPractice)
-                }
-
-                StepRail(items: stepItems(wizard), compact: true) { id in
-                    if let step = SessionWizard.Step(rawValue: id) {
-                        tap(step, wizard: wizard, session: session)
-                    }
-                }
-
+                // The left-right result of the focus set leads the page.
                 if let focus = wizard.focusSet {
                     focusSection(focus.set, index: focus.index, session: session)
                 } else {
@@ -85,11 +75,18 @@ struct SessionView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                if isPractice {
+                    PracticeTourSection(tour: PracticeTour(session: session, sigma: sigma),
+                                        onSelect: { task in performTour(task, session: session, wizard: wizard) })
+                }
+
                 stagesSection(session: session)
 
                 if !session.orderedCaptureSets.isEmpty {
                     allSetsSection(session: session, wizard: wizard)
                 }
+
+                stepsSection(wizard: wizard, session: session)
 
                 // The bottom bar drops its detail line at accessibility text sizes (it cannot
                 // scroll), so the same sentence is shown here where it can.
@@ -101,12 +98,16 @@ struct SessionView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if !isPractice {
-                    Button("Delete this session") { confirmDelete = true }
-                        .buttonStyle(PrimaryButtonStyle(isDestructive: true))
+                VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                    if isPractice {
+                        Button("Reset the virtual patient") { confirmReset = true }
+                            .buttonStyle(QuietButtonStyle(systemImage: "arrow.counterclockwise"))
+                    } else {
+                        Button("Delete this session") { confirmDelete = true }
+                            .buttonStyle(PrimaryButtonStyle(isDestructive: true))
+                    }
+                    ResearchNoticeBanner()
                 }
-
-                ResearchNoticeBanner()
             }
             .padding(.horizontal, Theme.Spacing.margin)
             .padding(.vertical, Theme.Spacing.l)
@@ -123,6 +124,11 @@ struct SessionView: View {
         .confirmationDialog("Delete this session and all of its images?",
                             isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete session", role: .destructive) { delete(session) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Start the virtual patient again from the beginning?",
+                            isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { resetPractice() }
             Button("Cancel", role: .cancel) {}
         }
         .alert("The virtual patient could not be started", isPresented: .init(get: { practiceError != nil }, set: { if !$0 { practiceError = nil } })) {
@@ -162,8 +168,9 @@ struct SessionView: View {
 
     // MARK: - Sections
 
-    /// The focus set: its title, when it was taken, its turned frontal photo and its four
-    /// left-right readings.
+    /// The focus set: its title, when it was taken, then its turned frontal photo beside the
+    /// four left-right differences. The photo opens the result; each difference opens it
+    /// focused on that difference.
     @ViewBuilder
     private func focusSection(_ set: CaptureSet, index: Int, session: StudySession) -> some View {
         let status = SetStatus(set: set, index: index, sigma: sigma)
@@ -180,69 +187,41 @@ struct SessionView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            SetPlateThumbnail(image: set.frontal.flatMap { store.image(for: $0, in: session) },
-                              landmarks: set.frontal?.landmarks,
-                              setIndex: index,
-                              practice: isPractice) {
-                navigator.push(.symmetry(ref, setID: set.id))
+            if let frontal = set.frontal {
+                Text("Left and right in this set")
+                    .font(.sectionTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                FocusSetSummary(image: store.image(for: frontal, in: session),
+                                landmarks: frontal.landmarks,
+                                reading: SetReading(landmarks: frontal.landmarks, sigma: sigma, frontal: frontal),
+                                setIndex: index,
+                                onOpen: { metric in
+                                    navigator.push(.symmetry(ref, setID: set.id, focus: metric?.layer ?? .all))
+                                },
+                                onMarkPoints: {
+                                    navigator.push(.markPoints(ref, setID: set.id, captureID: frontal.id))
+                                })
+            } else {
+                SetPlateThumbnail(image: nil, landmarks: nil, setIndex: index) {
+                    navigator.push(.symmetry(ref, setID: set.id))
+                }
             }
-
-        }
-
-        if let frontal = set.frontal {
-            gaugesSection(set: set, frontal: frontal)
         }
     }
 
-    /// "Left and right in this set": three compact lean gauges and the overlap line. Each
-    /// opens the symmetry result focused on that reading.
-    private func gaugesSection(set: CaptureSet, frontal: Capture) -> some View {
-        let reading = SetReading(landmarks: frontal.landmarks, sigma: sigma, frontal: frontal)
-        let markPoints = { navigator.push(.markPoints(ref, setID: set.id, captureID: frontal.id)) }
-        let hasAnyPoint = frontal.landmarks.map { !$0.points.isEmpty } ?? false
-        return VStack(alignment: .leading, spacing: Theme.Spacing.gaugeGap) {
-            Text("Left and right in this set")
+    /// The session's four steps, after the content: where the session stands, with the
+    /// actionable steps tappable.
+    private func stepsSection(wizard: SessionWizard, session: StudySession) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            Text("Steps")
                 .font(.sectionTitle)
                 .foregroundStyle(Theme.Colors.ink)
                 .accessibilityAddTraits(.isHeader)
-
-            if hasAnyPoint {
-                ForEach([BilateralMetric.nippleHeight, .nippleMidline, .foldHeight]) { metric in
-                    let r = reading.reading(metric)
-                    LeanGauge(title: metric.title,
-                              measurement: r.measurement,
-                              patientRightEnd: metric.patientRightEnd ?? "",
-                              patientLeftEnd: metric.patientLeftEnd ?? "",
-                              sentence: r.sentence,
-                              exportName: metric.exportName,
-                              notMeasuredReason: r.notMeasuredReason,
-                              compact: true,
-                              onSelect: { navigator.push(.symmetry(ref, setID: set.id, focus: metric.layer)) },
-                              onMarkPoints: markPoints)
-                }
-                let overlap = reading.reading(.outlineOverlap)
-                OverlapScale(measurement: overlap.measurement,
-                             sentence: overlap.sentence,
-                             exportName: BilateralMetric.outlineOverlap.exportName,
-                             notMeasuredReason: overlap.notMeasuredReason,
-                             compact: true,
-                             onSelect: { navigator.push(.symmetry(ref, setID: set.id, focus: BilateralMetric.outlineOverlap.layer)) },
-                             onMarkPoints: markPoints)
-            } else {
-                // No point placed yet: one reason instead of four identical ones.
-                VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .accessibilityHidden(true)
-                        Text(ReadingCopy.notMeasuredReason(for: .nippleHeight, missing: LandmarkType.allCases, flags: []))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.caution)
-                    .accessibilityElement(children: .combine)
-                    Button("Mark points", action: markPoints)
-                        .buttonStyle(SecondaryButtonStyle())
+            StepRail(items: stepItems(wizard), compact: true) { id in
+                if let step = SessionWizard.Step(rawValue: id) {
+                    tap(step, wizard: wizard, session: session)
                 }
             }
         }
