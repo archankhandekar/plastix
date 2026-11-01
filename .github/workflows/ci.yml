@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  package-tests-linux:
+    name: Package tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check user-facing copy
+        run: sh scripts/check-copy.sh
+      - name: Run SymmetryCore and SymmetryModels tests
+        run: swift test
+
+  package-tests-macos:
+    name: Package tests (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -n1)/Contents/Developer" && xcodebuild -version
+      - name: Run SymmetryCore and SymmetryModels tests
+        run: swift test
+
+  ios-app-build:
+    name: iOS app build (simulator, unsigned)
+    runs-on: macos-15
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 16
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -n1)/Contents/Developer" && xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: |
+          cp Config/Local.xcconfig.example Config/Local.xcconfig
+          xcodegen generate
+      - name: Build the app for the iOS simulator
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild build \
+            -project SymmetryPrototype.xcodeproj \
+            -scheme SymmetryPrototype \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" \
+            > build/xcodebuild.log 2>&1 || true
+          grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log | sort -u | head -n 80 || true
+          grep -q "BUILD SUCCEEDED" build/xcodebuild.log
+      - name: Build the app for devices (Release, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project SymmetryPrototype.xcodeproj \
+            -scheme SymmetryPrototype \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" \
+            >> build/xcodebuild.log 2>&1 || true
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build/xcodebuild.log | tail -n 40 || true
+          test -f build/DerivedData/Build/Products/Release-iphoneos/SymmetryPrototype.app/SymmetryPrototype
+      - name: Release binary contains no route harness
+        run: |
+          binary=build/DerivedData/Build/Products/Release-iphoneos/SymmetryPrototype.app/SymmetryPrototype
+          if strings "$binary" | grep -E 'UIRoute|UIDemo|RouteHarness'; then
+            echo "::error::The Release binary contains DEBUG route-harness strings."
+            exit 1
+          fi
+          echo "No route-harness strings in the Release binary."
+      - name: Route harness is referenced only in DEBUG code
+        run: |
+          # Every file under Debug/ is wrapped in #if DEBUG. Anywhere else, LaunchRoute,
+          # RouteHarness and UIRoute may appear only between #if DEBUG and its #else/#endif.
+          status=0
+          for f in $(find App/SymmetryPrototype -name '*.swift' -not -path 'App/SymmetryPrototype/Debug/*'); do
+            awk -v file="$f" '
+              /^[ \t]*#if[ \t]+DEBUG/ { depth++; debug[depth] = 1; next }
+              /^[ \t]*#if/ { depth++; debug[depth] = 0; next }
+              /^[ \t]*#else/ { if (depth > 0 && debug[depth] == 1) debug[depth] = 2; next }
+              /^[ \t]*#endif/ { if (depth > 0) depth--; next }
+              /LaunchRoute|RouteHarness|UIRoute/ {
+                inside = 0
+                for (i = 1; i <= depth; i++) if (debug[i] == 1) inside = 1
+                if (!inside) { printf "%s:%d: harness reference outside #if DEBUG\n", file, NR; bad = 1 }
+              }
+              END { exit bad }
+            ' "$f" || status=1
+          done
+          for f in $(find App/SymmetryPrototype/Debug -name '*.swift'); do
+            first=$(grep -v '^[[:space:]]*$' "$f" | grep -v '^[[:space:]]*//' | head -n 1)
+            last=$(grep -v '^[[:space:]]*$' "$f" | tail -n 1)
+            case "$first" in "#if DEBUG"*) ;; *) echo "$f: does not start with #if DEBUG"; status=1 ;; esac
+            case "$last" in "#endif"*) ;; *) echo "$f: does not end with #endif"; status=1 ;; esac
+          done
+          exit $status
+      - name: Run the app unit tests on the simulator
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project SymmetryPrototype.xcodeproj \
+            -scheme SymmetryPrototype \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            > build/xcodebuild-test.log 2>&1 || true
+          grep -E "error:|failed|Executed|TEST (SUCCEEDED|FAILED)" build/xcodebuild-test.log | tail -n 60 || true
+          grep -q "TEST SUCCEEDED" build/xcodebuild-test.log
+      - name: Report compiler errors where the API can read them
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Check-run annotations (readable via the REST API) for the first errors.
+          grep -E "error:" build/xcodebuild.log | sort -u | head -n 40 | while IFS= read -r line; do
+            file=$(printf '%s' "$line" | sed -nE 's#^(/[^:]+):([0-9]+):([0-9]+): error: .*#\1#p' | sed "s#^$GITHUB_WORKSPACE/##")
+            row=$(printf '%s' "$line" | sed -nE 's#^/[^:]+:([0-9]+):[0-9]+: error: .*#\1#p')
+            msg=$(printf '%s' "$line" | sed -E 's#^.*error: ##')
+            if [ -n "$file" ] && [ -n "$row" ]; then
+              echo "::error file=$file,line=$row::$msg"
+            else
+              echo "::error::$line"
+            fi
+          done
+          # Also a PR comment with the same lines, when this is a pull request build.
+          if [ -n "$PR_NUMBER" ]; then
+            {
+              echo "**iOS app build failed** on \`${GITHUB_SHA::7}\`. First compiler errors:"
+              echo
+              echo '```'
+              grep -E "error:" build/xcodebuild.log | sed "s#$GITHUB_WORKSPACE/##" | sort -u | head -n 40
+              echo '```'
+              echo
+              echo "Full log: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            } > build/comment.md
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -F body=@build/comment.md >/dev/null
+          fi
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: |
+            build/xcodebuild.log
+            build/xcodebuild-test.log

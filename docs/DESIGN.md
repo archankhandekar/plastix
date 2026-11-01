@@ -107,12 +107,25 @@ Ruling: yes. Cost if wrong: none significant.
 
 **Q13. Visual design.** See "Design direction" below. One accent colour, large targets,
 dark capture surfaces, light review surfaces, system font.
-Ruling: yes.
+Ruling: yes, amended after the readability review. Content now lives in quiet surface cards
+with a hairline stroke, used only as grouping containers for a numbered wizard (1 Take
+photos, 2 Mark points, 3 Compare, 4 Export). This is not a stats dashboard: numbers are
+folded away behind "Show measurements" until a frontal photo has all six points, and every
+number is shown as its untouched `MetricFormatter` string with a one-line plain-English
+meaning. Cost if wrong: the cards are a container style, not a layout, and can be flattened.
+Amended again by Q21 (Plumb): the cards are flattened. Screens are one quiet steel tray with
+no cards, shadows or hairlines; separation comes from space and the shared midline axis. The
+one accent colour is now Drape blue for derived geometry and the primary button, with
+gentian-violet Marker reserved for hand-placed points. The steps are 1 Take photos, 2 Mark
+points, 3 See left and right, 4 Export. Numbers are no longer folded away on the symmetry
+result: the plate and the four gauges carry them, each a verbatim `MetricFormatter` string.
 
 **Q14. Ghost overlay.** The spec lists the prior-image ghost overlay as a future milestone.
 With a live AVFoundation preview it costs one image view, so it is included as a toggle on the
-capture screen, off by default.
-Ruling: yes. Cost if wrong: remove the toggle.
+capture screen. Amended: the toggle is labelled "Match pose" and defaults to on for fresh
+installs, because a repeatable pose is the whole point of a second set; it is disabled when
+no earlier set in the session has the current angle.
+Ruling: yes. Cost if wrong: remove the toggle, or flip the default back to off.
 
 **Q15. Platform floor and language mode.** iOS 17.0, Swift 5 language mode with Swift 6
 toolchain compatibility, no third-party dependencies.
@@ -122,6 +135,101 @@ Ruling: yes. Cost if wrong: raising the floor to iOS 18 unlocks nothing the prot
 build environment. The app target has a manual acceptance checklist in the README rather than
 UI tests, because this environment cannot run Xcode.
 Ruling: yes. Cost if wrong: UI regressions are caught by hand.
+
+**Q17. Wizard and NextAction.** One pure `SessionProgress` value (Foundation, `SymmetryCore`
+and `SymmetryModels` only, no SwiftUI) computes four step states and exactly one next action
+from the existing model; every session-level screen derives its state from it and renders the
+next action as a single "Next: <verb>" button. A per-session "compared" flag lives in
+`UserDefaults` keyed by the session UUID (`compared-<uuid>`); it is UI-only, is absent from
+the report, and is simply orphaned when a session is deleted. `SessionProgress` has its own
+XCTest target in the app project.
+Ruling: yes. Cost if wrong: the wizard is a view over the model, so removing it changes no
+data.
+Amended by Q20: `SessionProgress`, its tests and the `StepList` view are replaced by
+`SessionWizard` and deleted. The UI-only flags move into `UIFlags` (`viewed-<setUUID>`,
+`stages-<sessionUUID>`, `obliques-<sessionUUID>`); the legacy `compared-<sessionUUID>` flag
+still counts as having opened the stages. They are still absent from the report and are
+now cleared when a session is deleted.
+
+**Q18. Plain-language advice.** Quality failures and reliability flags are shown as one
+sentence naming the problem and what to try ("The photo is blurred. Hold still, let the
+camera focus, then retake."). The raw blur, clipping and roll values are no longer on screen;
+they remain in the exported JSON. The Core `displayText` strings are unchanged and are used
+only in the export.
+Ruling: yes. Cost if wrong: the numbers are one disclosure away in the export, not lost.
+
+**Q19. Button order on the photo check.** The top button is always the recommended action
+and always carries the accent: Retake after a failed check, Use this photo after a pass. The
+second button is the other choice (Keep anyway, or Retake).
+Ruling: yes. Cost if wrong: swap two buttons.
+
+**Q20. Bilateral first, and the SessionWizard rules.** The owner's ruling: the app is for
+bilateral symmetry, not just before and after. Every photo set therefore leads to its own
+left-right result (the symmetry result, with Frontal and Obliques tabs), and change across
+stages is a secondary view (Across stages, then Compare two sets in detail). `SessionWizard`
+(pure; Foundation, `SymmetryCore` and `SymmetryModels` only) computes the four steps (1 Take
+photos, 2 Mark points, 3 See left and right, 4 Export) and exactly one next action, first
+match wins:
+1. missing photos: 'Take the missing photo(s) for set N';
+2. the earliest measured set not yet viewed: 'See left and right for set N';
+3. an unmarked frontal: 'Mark the points on set N';
+4. coincident midline points: 'Move the midline points apart on set N';
+5. no sets: 'Take the first 3 photos';
+6. fewer than two measured sets: 'Take 3 photos at the next stage';
+7. stages not opened: 'See how each difference changed across stages';
+8. otherwise 'Export the report' (study) or 'See what a report would contain' (practice).
+'See left and right for set N' comes before 'Mark the points on set N' (an integration
+change to the original order), so a set that is already measured is read before the next
+one is marked. Navigation is one NavigationStack over `AppNavigator.path: [AppRoute]`;
+screens append routes and never name each other's view types, and `AppRouteView` is the
+one place that maps a route to its screen, applying `.sessionScope(kind)` for every
+session route.
+Ruling: yes. Cost if wrong: the wizard is a view over the model; reordering rules changes no
+data.
+
+**Q21. Plumb design language and provenance colours.** An intraoperative measuring
+instrument. One 2pt Drape axis at exactly half the width means midline or zero difference
+and nothing else. Patient right is the screen-left column and patient left the screen-right
+column on every two-sided screen, including the flipped right oblique, the gauges, the stage
+charts and the chip map; side is named in words, never by hue and never as L or R (L is the
+reference length). Colour teaches provenance in one sentence: 'Violet is what you marked.
+Blue is what the app drew from your marks.' Mirrored patient-right geometry is dashed blue
+and the white caliper is the difference itself. Boldness lives only on the symmetry plate;
+everything else is a flat steel tray. One 64pt verb-first Next action per screen, no
+arrows, 56pt minimum targets, `.subheadline` as the type floor, no ALL CAPS, no middle-dot
+meta strings, no red and no colour zones. Three motions only (plumb, draw, mirror), with
+150ms crossfades under Reduce Motion. The copy guard enforces the words, glyphs and the
+font floor (see the README).
+Ruling: yes. Cost if wrong: the tokens live in `Theme` and the components in `Design/`;
+the legacy names remain as aliases.
+
+**Q22. Virtual patient and its safeguards.** A rendered, faceless, draped clay mannequin
+at four stages (scripts/virtual-patient, deterministic) with pixel ground truth, bundled in
+the app, so the whole flow can be shown without a real patient. Safeguards: a separate
+`PracticeStore` root (Application Support/Practice); the reserved DEMO- study code; the
+45-degree hatch band on every practice screen and 'Virtual patient. Practice photo.' on
+every practice photo; export refused on two independent markers (practice kind and the
+DEMO- code), with a preview instead of a share sheet; teaching rings and 'Check my points'
+only for a capture whose `DemoAssetKey` sidecar entry says it is a bundled render, so ground
+truth can never attach to a study photo. The seeded points are the ground truth plus seeded
+Gaussian jitter (`PracticeStore.defaultRNGSeed`, 0.3 sigma L), chosen so that sets 1 and 2
+keep their designed signs beyond their ±; `PracticeSeedIntegrationTests` checks this on the
+real bundle. The mannequin's numbers describe a render, not anatomy.
+Ruling: yes. Cost if wrong: delete the practice section and the bundled folder; study data
+is untouched.
+
+**Q23. DEBUG route harness.** For screenshots and design review, Debug builds open any of
+18 screens from launch arguments (`-UIRoute` and friends; see the README). `LaunchRoute`
+(a pure, unit-tested parser) and `RouteHarness` live in `Debug/`, each file wrapped
+entirely in `#if DEBUG`, and the app root names them only inside `#if DEBUG`. Every harness
+launch builds fresh temporary roots (`tmp/RouteHarness-<uuid>/Study` and `/Practice`) and a
+wiped `RouteHarness` UserDefaults suite for settings and UI flags; it never touches real
+study data and has no argument that could point it there. A seeded study session
+(`S-HARNESS`) is written by a second PracticeStore over the temporary study root and its
+asset-key sidecar is removed. `scripts/screens.sh` shoots 34 routes in two appearances and
+three text sizes, then builds a contact sheet and runs the copy guard. CI builds Release
+and fails if `strings` finds `UIRoute`, `UIDemo` or `RouteHarness` in the binary.
+Ruling: yes. Cost if wrong: delete `Debug/` and the `#if DEBUG` block in the app root.
 
 ## Architecture
 
@@ -196,8 +304,10 @@ Plan:
   sentence case: "Retake", "Keep anyway", "Comparison unreliable: landmarks did not align".
 
 Reviewed against the generic default: a stats-first dashboard with cards and a teal
-gradient was the obvious shape and was rejected. Images first, numbers second, no cards,
-no gradients, no all-caps labels.
+gradient was the obvious shape and was rejected. Images first, numbers second, no gradients,
+no all-caps labels. Cards are allowed only as quiet grouping containers with a hairline
+stroke (the step list, one photo set, one guidance note), never as a dashboard of numbers;
+measurements stay folded behind "Show measurements" (Q13).
 
 ## Non-goals and anti-goals
 
