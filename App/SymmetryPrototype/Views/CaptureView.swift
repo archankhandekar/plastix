@@ -45,21 +45,36 @@ struct CaptureView: View {
         ViewAngle.allCases.firstIndex(of: angle)! + 1
     }
 
-    /// True when another set in this session already holds a photo of the current angle,
-    /// so there is an earlier photo to match the pose against.
-    private var hasPriorCapture: Bool {
-        guard let angle = current, let session = store.session(id: sessionID) else { return false }
-        return session.orderedCaptureSets.contains { $0.id != captureSet.id && $0.captures[angle] != nil }
+    /// The other set whose photo of the current angle is used to match the pose: the
+    /// nearest set created before this one, or, when none exists (retaking set 1 while a
+    /// later set exists), the newest other set. `isEarlier` says which, so the hint can
+    /// name the photo honestly.
+    private var ghostSource: (capture: Capture, isEarlier: Bool)? {
+        guard let angle = current, let session = store.session(id: sessionID) else { return nil }
+        let others = session.orderedCaptureSets.filter { $0.id != captureSet.id && $0.captures[angle] != nil }
+        if let earlier = others.last(where: { $0.createdAt < captureSet.createdAt }), let capture = earlier.captures[angle] {
+            return (capture, true)
+        }
+        if let other = others.last, let capture = other.captures[angle] {
+            return (capture, false)
+        }
+        return nil
     }
 
+    /// True when another set in this session already holds a photo of the current angle,
+    /// so there is a photo to match the pose against.
+    private var hasPriorCapture: Bool { ghostSource != nil }
+
+    /// The disabled state carries its reason in the visible title, not only in VoiceOver.
     private var matchPoseTitle: String {
-        guard hasPriorCapture else { return "Match pose" }
+        guard hasPriorCapture else { return "Match pose (needs an earlier set)" }
         return settings.ghostOverlayEnabled ? "Match pose: On" : "Match pose: Off"
     }
 
     private var matchPoseHint: String {
-        hasPriorCapture ? "Shows the earlier photo of this view faintly in the camera"
-                        : "Needs a photo of this view from an earlier set"
+        guard let source = ghostSource else { return "Needs a photo of this view from an earlier set" }
+        return source.isEarlier ? "Shows the earlier photo of this view faintly in the camera"
+                                : "Shows this view from a later set faintly in the camera"
     }
 
     /// True when the last photo in this queue leads to marking the frontal: the frontal is
@@ -74,11 +89,10 @@ struct CaptureView: View {
         errorMessage == CameraService.CameraError.notAuthorized.errorDescription
     }
 
-    /// The most recent capture of the current angle from another set in this session.
+    /// The photo of the current angle from `ghostSource`, faded into the viewfinder.
     private var ghostImage: UIImage? {
-        guard settings.ghostOverlayEnabled, let angle = current, let session = store.session(id: sessionID) else { return nil }
-        let prior = session.orderedCaptureSets.reversed().first { $0.id != captureSet.id && $0.captures[angle] != nil }
-        guard let capture = prior?.captures[angle] else { return nil }
+        guard settings.ghostOverlayEnabled, let session = store.session(id: sessionID),
+              let capture = ghostSource?.capture else { return nil }
         return store.image(for: capture, in: session)
     }
 
@@ -191,7 +205,7 @@ struct CaptureView: View {
                 }
             }
             .disabled(isCapturing || current == nil || !camera.isRunning)
-            .accessibilityLabel("Capture \(current?.displayName ?? "")")
+            .accessibilityLabel("Take \(current?.displayName ?? "") photo")
             Spacer(minLength: Theme.Spacing.s)
             Button(matchPoseTitle) { settings.ghostOverlayEnabled.toggle() }
                 .buttonStyle(OutlinedCaptureButtonStyle())
