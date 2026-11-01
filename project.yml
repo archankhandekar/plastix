@@ -18,6 +18,10 @@ targets:
       - path: App/SymmetryPrototype
         excludes:
           - "Info.plist"
+          - "Resources/VirtualPatient/**"
+      - path: App/SymmetryPrototype/Resources/VirtualPatient
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: SymmetryCore
         product: SymmetryCore
