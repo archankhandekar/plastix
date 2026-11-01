@@ -139,7 +139,8 @@ struct SessionWizard {
 
         let firstUnviewed = measuredIndexed.first { !viewedSetIDs.contains($0.set.id) }
 
-        // Exactly one next action, first matching rule wins.
+        // Exactly one next action, first matching rule wins. A measured set whose left-right
+        // result has not been opened comes before marking another set: symmetry is the point.
         let next: Action
         if let incomplete = firstIncomplete {
             let angles = incomplete.set.missingAngles
@@ -147,6 +148,10 @@ struct SessionWizard {
             next = .captureMissing(set: incomplete.set, index: i, angles: angles,
                                    title: angles.count == 1 ? "Take the missing photo for set \(i)" : "Take the missing photos for set \(i)",
                                    detail: SessionWizard.missingDetail(index: i, angles: angles))
+        } else if let unviewed = firstUnviewed {
+            next = .viewSymmetry(set: unviewed.set, index: unviewed.index,
+                                 title: "See left and right for set \(unviewed.index)",
+                                 detail: SessionWizard.measuredDetail(index: unviewed.index, set: unviewed.set))
         } else if let unmarked = indexed.first(where: { $0.set.frontal != nil && $0.set.frontal?.landmarks?.isComplete != true }),
                   let frontal = unmarked.set.frontal {
             next = .markPoints(set: unmarked.set, index: unmarked.index, capture: frontal,
@@ -161,10 +166,6 @@ struct SessionWizard {
                                detail: SessionWizard.coincidentMidlineDetail(index: coincident.index))
         } else if indexed.isEmpty {
             next = SessionWizard.firstSetAction
-        } else if let unviewed = firstUnviewed {
-            next = .viewSymmetry(set: unviewed.set, index: unviewed.index,
-                                 title: "See left and right for set \(unviewed.index)",
-                                 detail: SessionWizard.measuredDetail(index: unviewed.index, set: unviewed.set))
         } else if measured.count < 2, let last = indexed.last {
             let suggested = SessionWizard.suggestedStage(after: last.set.stage)
             next = .newSet(suggestedStage: suggested,

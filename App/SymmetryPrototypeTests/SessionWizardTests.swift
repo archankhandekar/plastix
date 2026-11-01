@@ -333,12 +333,14 @@ final class SessionWizardTests: XCTestCase {
         XCTAssertEqual(w.currentStep, .takePhotos)
     }
 
-    func testUnmarkedSetComesBeforeSeeingAnUnviewedSet() {
+    func testSeeingAnUnviewedSetComesBeforeMarkingAnotherSet() {
         let a = set(stage: .preoperativeMarking, createdAt: t0, frontalLandmarks: sixPoints)
         let b = set(stage: .afterResection, createdAt: t1)
         let w = wizard([a, b], viewed: [])
-        XCTAssertEqual(w.next.title, "Mark the points on set 2")
-        XCTAssertEqual(w.states[.seeSides], .upcoming("Ready for set 1"))
+        XCTAssertEqual(w.next.title, "See left and right for set 1")
+        XCTAssertEqual(w.currentStep, .seeSides)
+        // Once set 1 has been seen, marking set 2 is next.
+        XCTAssertEqual(wizard([a, b], viewed: [a.id]).next.title, "Mark the points on set 2")
     }
 
     func testPracticeExportTitleAndStatus() {
@@ -365,7 +367,7 @@ final class SessionWizardTests: XCTestCase {
         // Completion: done only when every measured set is viewed.
         XCTAssertEqual(wizard([a, b], viewed: [a.id, b.id], hasOpenedStages: true).states[.seeSides], .done("Seen for all 2 measured sets"))
         let partial = wizard([a, b, set(stage: .afterClosure, createdAt: t2)], viewed: [a.id])
-        XCTAssertEqual(partial.states[.seeSides], .upcoming("Ready for set 2"))
+        XCTAssertEqual(partial.states[.seeSides], .current("Ready for set 2"))
     }
 
     func testIsActionable() {
