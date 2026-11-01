@@ -64,16 +64,20 @@ struct SymmetryResultView: View {
     private func content(session: StudySession, set: CaptureSet) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                    // The tabs and the title stop growing at the largest standard size, so at
+                    // accessibility sizes the plate still starts in the first screenful.
                     SegmentedChoice([(value: SymmetryTab.frontal, title: "Frontal"),
                                      (value: SymmetryTab.obliques, title: "Obliques")],
                                     selection: $tab)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .id(ScrollTarget.top)
 
                     Text(SessionWizard.title(of: set, in: session))
                         .font(.screenTitle)
                         .foregroundStyle(Theme.Colors.ink)
                         .fixedSize(horizontal: false, vertical: true)
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .accessibilityAddTraits(.isHeader)
 
                     switch tab {
@@ -93,11 +97,13 @@ struct SymmetryResultView: View {
                 withAnimation(scrollAnimation) { proxy.scrollTo(ScrollTarget.top, anchor: .top) }
             }
         }
+        .navigationTitle("Set \(SessionWizard.index(of: set, in: session))")
         .toolbar {
+            // An action, tinted and weighted like the back button, so it never reads as the title.
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Set photos") { navigator.push(.review(ref, setID: setID)) }
-                    .font(.actionLabel)
-                    .foregroundStyle(Theme.Colors.ink)
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.drape)
                     .frame(minWidth: Theme.tapTarget, minHeight: 44)
             }
         }
@@ -134,28 +140,40 @@ struct SymmetryResultView: View {
             let reading = SetReading(landmarks: capture.landmarks, sigma: settings.landmarkSigmaRatio, frontal: capture)
             let markPoints = { navigator.push(.markPoints(ref, setID: setID, captureID: capture.id)) }
 
+            let landmarks = capture.landmarks ?? LandmarkSet(imageSize: capture.imageSize)
+
             VStack(alignment: .leading, spacing: Theme.Spacing.section) {
+                // The answer first: the plate, then the four differences right under it.
                 VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-                    SymmetryPlate(image: image,
-                                  landmarks: capture.landmarks ?? LandmarkSet(imageSize: capture.imageSize),
-                                  reading: reading,
-                                  focus: focus,
-                                  practice: isPractice)
-                        .id(ScrollTarget.plate)
-                    supportText(reading.canTurn ? ReadingCopy.photoTurnedCaption : ReadingCopy.cannotTurnCaption)
-                    SegmentedChoice(PlateLayer.allCases.map { (value: $0, title: $0.title) }, selection: $focus)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                        SymmetryPlate(image: image,
+                                      landmarks: landmarks,
+                                      reading: reading,
+                                      focus: focus,
+                                      practice: isPractice,
+                                      caution: Self.cautionTag(for: capture))
+                            .id(ScrollTarget.plate)
+                        PlateKeyList(reading: reading, focus: $focus)
+                    }
+                    if !reading.flagSentences.isEmpty {
+                        flagStrip(reading.flagSentences)
+                    }
                     if let metric = BilateralMetric.allCases.first(where: { $0.layer == focus }) {
                         focusedReadout(reading.reading(metric))
+                    }
+                    if focus == .outlines, !landmarks.leftContour.isEmpty || !landmarks.rightContour.isEmpty {
+                        OverlapLegend()
+                    }
+                    if focus != .all {
+                        Button("Show every layer") { focus = .all }
+                            .buttonStyle(SecondaryButtonStyle())
                     }
                 }
 
                 gauges(reading: reading, proxy: proxy, markPoints: markPoints)
 
-                if !reading.flagSentences.isEmpty {
-                    flagStrip(reading.flagSentences)
-                }
-
                 VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                    supportText(reading.canTurn ? ReadingCopy.photoTurnedCaption : ReadingCopy.cannotTurnCaption)
                     supportText(ReadingCopy.referenceCaption)
                     if isPractice {
                         supportText(ReadingCopy.practiceMidlineCaption)
@@ -232,6 +250,22 @@ struct SymmetryResultView: View {
     private func select(_ layer: PlateLayer, proxy: ScrollViewProxy) {
         focus = layer
         withAnimation(scrollAnimation) { proxy.scrollTo(ScrollTarget.plate, anchor: .top) }
+    }
+
+    /// The short caution tag on the plate when the photo was kept despite a photo-check
+    /// warning, or was never checked. The full sentence sits under the differences.
+    static func cautionTag(for capture: Capture) -> String? {
+        guard let quality = capture.quality else { return "Photo not checked" }
+        guard capture.qualityOverridden || !quality.passed else { return nil }
+        guard quality.failures.count == 1, let failure = quality.failures.first else {
+            return quality.failures.isEmpty ? nil : "Photo kept with warnings"
+        }
+        switch failure {
+        case .blurry: return "Blurred photo, kept"
+        case .overexposed: return "Too-bright photo, kept"
+        case .underexposed: return "Too-dark photo, kept"
+        case .tilted: return "Tilted photo, kept"
+        }
     }
 
     private func flagStrip(_ sentences: [String]) -> some View {

@@ -74,26 +74,55 @@ final class DesignGeometryTests: XCTestCase {
         return try XCTUnwrap(PlateGeometry(landmarks: set, size: size))
     }
 
+    /// Square framing on a 400pt plate: notch at 0.10 * 400 = 40, k = 400 / 1.4 points per L.
+    private let squareK: CGFloat = 400 / 1.4
+
     func testNotchAndMidlineBottomLandOnTheAxis() throws {
         let g = try geometry()
+        XCTAssertEqual(g.framing, .square)
         XCTAssertEqual(g.axisX, 200)
-        XCTAssertEqual(g.notchY, 72, accuracy: 1e-9)
-        XCTAssertEqual(g.pointsPerL, 250, accuracy: 1e-9)
-        XCTAssertEqual(g.bottomY, 322, accuracy: 1e-9)
+        XCTAssertEqual(g.notchY, 40, accuracy: 1e-9)
+        XCTAssertEqual(g.pointsPerL, squareK, accuracy: 1e-9)
+        XCTAssertEqual(g.bottomY, 40 + squareK, accuracy: 1e-9)
 
         let n = g.viewPoint(pixel: notch)
         XCTAssertEqual(n.x, 200, accuracy: 1e-6)
-        XCTAssertEqual(n.y, 72, accuracy: 1e-6)
+        XCTAssertEqual(n.y, 40, accuracy: 1e-6)
         let b = g.viewPoint(pixel: bottom)
         XCTAssertEqual(b.x, 200, accuracy: 1e-6)
-        XCTAssertEqual(b.y, 322, accuracy: 1e-6)
+        XCTAssertEqual(b.y, 40 + squareK, accuracy: 1e-6)
 
         let tn = CGPoint(x: notch.x, y: notch.y).applying(g.imageTransform)
         let tb = CGPoint(x: bottom.x, y: bottom.y).applying(g.imageTransform)
         XCTAssertEqual(tn.x, 200, accuracy: 1e-6)
-        XCTAssertEqual(tn.y, 72, accuracy: 1e-6)
+        XCTAssertEqual(tn.y, 40, accuracy: 1e-6)
         XCTAssertEqual(tb.x, 200, accuracy: 1e-6)
-        XCTAssertEqual(tb.y, 322, accuracy: 1e-6)
+        XCTAssertEqual(tb.y, 40 + squareK, accuracy: 1e-6)
+    }
+
+    func testFramingsKeepTheMidlineBottomInsideThePlate() {
+        for framing in [PlateGeometry.Framing.square, .wide] {
+            let bottomFraction = framing.notchFraction + 1 / framing.spanL
+            XCTAssertLessThan(bottomFraction, 0.95, "the midline bottom and its label stay on the plate")
+            XCTAssertGreaterThan(bottomFraction, 0.8, "the torso fills the plate, with little drape below")
+            XCTAssertGreaterThanOrEqual(framing.notchFraction, 0.08, "the notch clears the corner tags")
+        }
+        XCTAssertGreaterThan(PlateGeometry.Framing.wide.aspectRatio, 1)
+    }
+
+    func testWideFramingUsesTheHeightForL() throws {
+        var set = LandmarkSet(imageSize: Point2D(x: 1000, y: 1400))
+        set[.sternalNotch] = notch
+        set[.midlineBottom] = bottom
+        let g = try XCTUnwrap(PlateGeometry(landmarks: set, size: CGSize(width: 400, height: 350), framing: .wide))
+        XCTAssertEqual(g.axisX, 200)
+        XCTAssertEqual(g.notchY, 35, accuracy: 1e-9)
+        XCTAssertEqual(g.pointsPerL, 350 / 1.28, accuracy: 1e-9)
+        let b = g.viewPoint(pixel: bottom)
+        XCTAssertEqual(b.x, 200, accuracy: 1e-6)
+        XCTAssertEqual(b.y, g.bottomY, accuracy: 1e-6)
+        let tb = CGPoint(x: bottom.x, y: bottom.y).applying(g.imageTransform)
+        XCTAssertEqual(tb.y, g.bottomY, accuracy: 1e-6)
     }
 
     func testImageTransformMatchesViewPointForSamplePixels() throws {
@@ -114,7 +143,7 @@ final class DesignGeometryTests: XCTestCase {
         // With no rotation the notch still lands on (axisX, notchY) ...
         let n = CGPoint(x: notch.x, y: notch.y).applying(t0)
         XCTAssertEqual(n.x, 200, accuracy: 1e-6)
-        XCTAssertEqual(n.y, 72, accuracy: 1e-6)
+        XCTAssertEqual(n.y, 40, accuracy: 1e-6)
         // ... but the tilted midline bottom does not sit on the axis yet.
         let b = CGPoint(x: bottom.x, y: bottom.y).applying(t0)
         XCTAssertGreaterThan(abs(b.x - 200), 1)
@@ -142,7 +171,8 @@ final class DesignGeometryTests: XCTestCase {
 
     func testUncertaintyPointsScaleWithL() throws {
         let g = try geometry()
-        XCTAssertEqual(g.uncertaintyPoints(0.02), 5, accuracy: 1e-9)
+        XCTAssertEqual(g.uncertaintyPoints(0.02), 0.02 * squareK, accuracy: 1e-9)
+        XCTAssertEqual(g.uncertaintyPoints(-0.02), 0.02 * squareK, accuracy: 1e-9)
     }
 
     func testCanTurnNeedsTwoDistinctMidlinePoints() {
