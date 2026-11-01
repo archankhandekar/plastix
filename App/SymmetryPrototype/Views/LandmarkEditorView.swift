@@ -413,7 +413,7 @@ struct LandmarkCanvas: View {
             ctx.fill(Path(ellipseIn: CGRect(x: v.x - 2.5, y: v.y - 2.5, width: 5, height: 5)), with: .color(.black.opacity(0.7)))
             ctx.fill(Path(ellipseIn: CGRect(x: v.x - 1.5, y: v.y - 1.5, width: 3, height: 3)), with: .color(color))
             // Caption on a black 70% rounded backing, like the banner, just above the ring.
-            let label = ctx.resolve(Text(type.shortName).font(.subheadline).foregroundStyle(color))
+            let label = ctx.resolve(Text(LandmarkHints.chipLabel(type)).font(.subheadline).foregroundStyle(color))
             let size = label.measure(in: CGSize(width: 240, height: 60))
             let pad: CGFloat = 4
             let center = CGPoint(x: v.x, y: v.y - r - 4 - pad - size.height / 2)

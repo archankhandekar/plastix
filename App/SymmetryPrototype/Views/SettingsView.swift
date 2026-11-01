@@ -39,7 +39,7 @@ struct SettingsView: View {
             } header: {
                 header("Quality gate")
             } footer: {
-                footer("Starting guesses. Tune them on the first real captures.")
+                footer("Starting guesses. Tune them on the first real photos.")
             }
 
             Section {
@@ -53,7 +53,7 @@ struct SettingsView: View {
                 .tint(Theme.Colors.accent)
                 .frame(minHeight: Theme.tapTarget)
             } header: {
-                header("Comparison and capture")
+                header("Comparison and camera")
             }
 
             Section {
