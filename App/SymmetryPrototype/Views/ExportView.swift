@@ -70,7 +70,7 @@ struct ExportView: View {
             CaptureSetStatus(set: set, index: offset + 1, sigma: sigma).gapLines
         }
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("This report will contain: \(sets) photo set\(sets == 1 ? "" : "s"), \(measured) measured frontal photo\(measured == 1 ? "" : "s"), \(comparisons) comparison\(comparisons == 1 ? "" : "s"). No names. Photos are left out unless you include them.")
+            Text("This report will contain: \(sets) photo set\(sets == 1 ? "" : "s"), \(measured) measured set\(measured == 1 ? "" : "s"), \(comparisons) comparison\(comparisons == 1 ? "" : "s"). No names. Photos are left out unless you include them.")
                 .font(.body)
                 .foregroundStyle(Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -133,7 +133,7 @@ struct ExportView: View {
 
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 Toggle(isOn: $includeImages) {
-                    Text("2  Include photos with the points drawn on them (optional, \(photoCount) photos)")
+                    Text("2  Include photos with the points drawn on them (optional, \(photoCount) photo\(photoCount == 1 ? "" : "s"))")
                         .font(.body)
                         .foregroundStyle(Theme.Colors.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -158,7 +158,8 @@ struct ExportView: View {
 
     private var shareTitle: String {
         let n = exportURLs.count
-        return n == 2 ? "Share 2 files (report and definitions)" : "Share \(n) files (report, definitions and \(n - 2) photos)"
+        let p = n - 2
+        return n == 2 ? "Share 2 files (report and definitions)" : "Share \(n) files (report, definitions and \(p) photo\(p == 1 ? "" : "s"))"
     }
 
     private var shareCard: some View {
