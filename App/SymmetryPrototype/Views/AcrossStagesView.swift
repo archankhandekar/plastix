@@ -25,6 +25,8 @@ struct AcrossStagesView: View {
 
     static let title = "How each left-right difference changed across stages"
     static let intro = "Each row is one set. The bar is its ±. A hollow mark cannot be told apart from zero."
+    /// The chart axes carry bare numbers; their unit is stated once, here.
+    static let unitLine = "Values are shares of L, the length from the sternal notch to the midline bottom."
     static let needsTwoSets = "Mark the points on at least two sets to see how each left-right difference changed across stages."
 
     var body: some View {
@@ -52,6 +54,10 @@ struct AcrossStagesView: View {
                     Text(Self.intro)
                         .font(.body)
                         .foregroundStyle(Theme.Colors.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(Self.unitLine)
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.graduation)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -98,8 +104,10 @@ struct AcrossStagesView: View {
 
     @ViewBuilder
     private func metricSection(_ metric: BilateralMetric, series: StageSeries) -> some View {
-        let rows = series.rows(for: metric).map {
-            StageLeanChart.Row(id: $0.id, label: $0.label, measurement: $0.measurement)
+        // Each chart row is named with its stage ("Set 1, preoperative marking"), so the
+        // chart can be read without the readout list below it.
+        let rows = zip(series.entries, series.rows(for: metric)).map { entry, row in
+            StageLeanChart.Row(id: row.id, label: entry.title, measurement: row.measurement)
         }
         let lines = Array(zip(series.entries, series.readoutLines(for: metric)))
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {

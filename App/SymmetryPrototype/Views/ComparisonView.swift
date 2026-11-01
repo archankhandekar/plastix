@@ -12,6 +12,7 @@ struct ComparisonView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.sessionKind) private var kind
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sessionID: UUID
 
     @State private var baselineID: UUID?
@@ -41,10 +42,14 @@ struct ComparisonView: View {
     var body: some View {
         if let session {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Spacing.section) {
+                // The set choice sits close to the result it controls; result sections are
+                // spaced apart from each other.
+                VStack(alignment: .leading, spacing: Theme.Spacing.l) {
                     pickerSection(session: session)
-                    content(session: session)
-                    ResearchNoticeBanner(showsExplainerLink: false)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.section) {
+                        content(session: session)
+                        ResearchNoticeBanner(showsExplainerLink: false)
+                    }
                 }
                 .padding(Theme.Spacing.margin)
             }
@@ -79,54 +84,58 @@ struct ComparisonView: View {
 
     // MARK: - Set choice
 
+    /// The two set menus, side by side at the default sizes (earlier on the left, like a
+    /// timeline) and stacked at the larger sizes, where half the width would break words.
     @ViewBuilder
     private func pickerSection(session: StudySession) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            if let b = set(baselineID), let c = set(currentID) {
-                Text("Comparing set \(index(b, in: session)) (\(b.stage.label)) with set \(index(c, in: session)) (\(c.stage.label)).")
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        let layout = dynamicTypeSize >= .xxLarge
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: Theme.Spacing.s))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.s))
+        layout {
             setMenu("Earlier set", selection: $baselineID, session: session)
             setMenu("Later set", selection: $currentID, session: session)
         }
+        // Side by side, both outlines take the taller one's height.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// A 56pt outlined menu: the field name above, the chosen set inside the outline.
+    /// A 56pt outlined menu holding the field name and the chosen set. The name gets the full
+    /// width of the outline; the only other mark is a small up-down chevron by the field name.
     private func setMenu(_ title: String, selection: Binding<UUID?>, session: StudySession) -> some View {
         let chosen = set(selection.wrappedValue).map { label($0, in: session) } ?? "Choose a set"
-        return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            Text(title)
-                .font(.support)
-                .foregroundStyle(Theme.Colors.graduation)
-                .accessibilityHidden(true)
-            Menu {
-                ForEach(candidates) { s in
-                    Button(label(s, in: session)) { selection.wrappedValue = s.id }
-                }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
-                    Text(chosen)
-                        .font(.body)
-                        .foregroundStyle(Theme.Colors.ink)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+        return Menu {
+            ForEach(candidates) { s in
+                Button(label(s, in: session)) { selection.wrappedValue = s.id }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
+                    Text(title)
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.graduation)
                     Spacer(minLength: 0)
-                    Text("Choose")
+                    Image(systemName: "chevron.up.chevron.down")
                         .font(.support.weight(.semibold))
                         .foregroundStyle(Theme.Colors.drape)
+                        .accessibilityHidden(true)
                 }
-                .padding(.horizontal, Theme.Spacing.m)
-                .padding(.vertical, Theme.Spacing.s)
-                .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
-                .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius)
-                    .strokeBorder(Theme.Colors.graduation, lineWidth: 1.5))
+                Text(chosen)
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .accessibilityLabel(title)
-            .accessibilityValue(chosen)
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, Theme.Spacing.s)
+            .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, maxHeight: .infinity, alignment: .topLeading)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                .strokeBorder(Theme.Colors.graduation, lineWidth: 1.5))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(title)
+        .accessibilityValue(chosen)
     }
 
     // MARK: - Readiness
@@ -216,8 +225,7 @@ struct ComparisonView: View {
         let i = index(b, in: session)
         let j = index(c, in: session)
 
-        HowToReadCard()
-
+        // The result comes first; how to read it follows the oblique photos.
         frontalSection(session: session, baseline: b, current: c, comparison: comparison, i: i, j: j)
 
         ForEach([ViewAngle.leftOblique, .rightOblique]) { angle in
@@ -226,6 +234,8 @@ struct ComparisonView: View {
                                    earlier: b.captures[angle], later: c.captures[angle], i: i, j: j)
             }
         }
+
+        HowToReadCard()
     }
 
     private static let notLinedUp = "The two frontal photos did not line up. The numbers below are shown faded. Re-check the sternal notch and midline bottom on both frontal photos, then come back."
@@ -253,14 +263,65 @@ struct ComparisonView: View {
                 .foregroundStyle(Theme.Colors.ink)
                 .accessibilityAddTraits(.isHeader)
 
+            // A warning that changes how the numbers read comes before them.
+            if !(reg?.isReliable ?? false) {
+                cautionLine(Self.notLinedUp)
+            }
+
+            let differing = differingPositioningFields(b.positioning, c.positioning)
+            if !differing.isEmpty {
+                GuidanceCard(kind: .caution,
+                             body: "Positioning differs between these sets (\(differing.joined(separator: ", "))). Differences may come from posture, not anatomy.")
+            }
+
+            // The change rows lead, so the first change with its ± is in the first screenful.
+            let hasContours = [b.frontal?.landmarks, c.frontal?.landmarks].allSatisfy { set in
+                guard let set else { return false }
+                return !set.leftContour.isEmpty && !set.rightContour.isEmpty
+            }
+            let missing = LandmarkType.allCases.filter { type in
+                (b.frontal?.landmarks?.missing.contains(type) ?? true) || (c.frontal?.landmarks?.missing.contains(type) ?? true)
+            }
+            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                ForEach(comparison.deltas, id: \.name) { delta in
+                    MetricDeltaRow(delta: delta,
+                                   columnTitles: ("Set \(i)", "Set \(j)", "Change"),
+                                   explanation: MetricGlossary.meaning(for: delta.name),
+                                   reason: deltaReason(delta, comparison: comparison, missing: missing, hasContours: hasContours),
+                                   dimmed: dimmed)
+                }
+            }
+
+            Text(MetricGlossary.changeLine(earlier: i, later: j))
+                .font(.support)
+                .foregroundStyle(Theme.Colors.graduation)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let bf = b.frontal, let bl = bf.landmarks, let image = store.image(for: bf, in: session) {
+                LandmarkOverlayImage(image: image, baseline: bl, current: c.frontal?.landmarks,
+                                     transform: reg?.transform, dimmed: dimmed)
+                    .frame(maxWidth: .infinity, maxHeight: 360)
+                    .background(Theme.Colors.plate, in: RoundedRectangle(cornerRadius: Theme.photoRadius))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
+                    .padding(.top, Theme.Spacing.s)
+                Text("Grey rings and dashed lines: set \(i) points and outlines. Violet dots and solid lines: set \(j) points and outlines, moved onto the set \(i) photo.")
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.graduation)
+                    .fixedSize(horizontal: false, vertical: true)
+                if dimmed {
+                    Text("Faded because the photos did not line up.")
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if let reg {
                 if reg.isReliable {
                     Text("The two frontal photos lined up: the average mismatch over \(reg.sharedLandmarkCount) points is within the limit.")
                         .font(.body)
                         .foregroundStyle(Theme.Colors.ink)
                         .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    cautionLine(Self.notLinedUp)
                 }
                 DisclosureGroup {
                     Text("These are fit diagnostics, not measurements, so they have no ±.")
@@ -284,55 +345,7 @@ struct ComparisonView: View {
                         .tapTarget()
                 }
                 .tint(Theme.Colors.drape)
-            } else {
-                cautionLine(Self.notLinedUp)
             }
-
-            if let bf = b.frontal, let bl = bf.landmarks, let image = store.image(for: bf, in: session) {
-                LandmarkOverlayImage(image: image, baseline: bl, current: c.frontal?.landmarks,
-                                     transform: reg?.transform, dimmed: dimmed)
-                    .frame(maxWidth: .infinity, maxHeight: 360)
-                    .background(Theme.Colors.plate, in: RoundedRectangle(cornerRadius: Theme.photoRadius))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
-                Text("Grey rings and dashed lines: set \(i) points and outlines. Violet dots and solid lines: set \(j) points and outlines, moved onto the set \(i) photo.")
-                    .font(.support)
-                    .foregroundStyle(Theme.Colors.graduation)
-                    .fixedSize(horizontal: false, vertical: true)
-                if dimmed {
-                    Text("Faded because the photos did not line up.")
-                        .font(.support)
-                        .foregroundStyle(Theme.Colors.caution)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            let differing = differingPositioningFields(b.positioning, c.positioning)
-            if !differing.isEmpty {
-                GuidanceCard(kind: .caution,
-                             body: "Positioning differs between these sets (\(differing.joined(separator: ", "))). Differences may come from posture, not anatomy.")
-            }
-
-            let hasContours = [b.frontal?.landmarks, c.frontal?.landmarks].allSatisfy { set in
-                guard let set else { return false }
-                return !set.leftContour.isEmpty && !set.rightContour.isEmpty
-            }
-            let missing = LandmarkType.allCases.filter { type in
-                (b.frontal?.landmarks?.missing.contains(type) ?? true) || (c.frontal?.landmarks?.missing.contains(type) ?? true)
-            }
-            VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-                ForEach(comparison.deltas, id: \.name) { delta in
-                    MetricDeltaRow(delta: delta,
-                                   columnTitles: ("Set \(i)", "Set \(j)", "Change"),
-                                   explanation: MetricGlossary.meaning(for: delta.name),
-                                   reason: deltaReason(delta, comparison: comparison, missing: missing, hasContours: hasContours),
-                                   dimmed: dimmed)
-                }
-            }
-
-            Text(MetricGlossary.changeLine(earlier: i, later: j))
-                .font(.support)
-                .foregroundStyle(Theme.Colors.graduation)
-                .fixedSize(horizontal: false, vertical: true)
 
             FlagList(flags: comparison.flags)
         }
