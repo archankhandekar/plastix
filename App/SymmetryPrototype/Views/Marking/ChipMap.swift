@@ -204,14 +204,27 @@ struct ChipMap: View {
     private func stateLine(_ state: CellState) -> some View {
         switch state {
         case .placed:
-            HStack(spacing: Theme.Spacing.xs) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Theme.Colors.marker)
-                    .frame(width: 12, height: 12)
+            // Never breaks the word: drops the swatch, then the word, when the cell is narrow.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Theme.Colors.marker)
+                        .frame(width: 12, height: 12)
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Theme.Colors.marker)
+                    Text(state.line)
+                        .foregroundStyle(Theme.Colors.ink)
+                }
+                .fixedSize()
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Theme.Colors.marker)
+                    Text(state.line)
+                        .foregroundStyle(Theme.Colors.ink)
+                }
+                .fixedSize()
                 Image(systemName: "checkmark")
                     .foregroundStyle(Theme.Colors.marker)
-                Text(state.line)
-                    .foregroundStyle(Theme.Colors.ink)
             }
             .font(.support)
         case .next:

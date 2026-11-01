@@ -86,8 +86,9 @@ final class VirtualCameraSourceTests: XCTestCase {
 
         let blurred = try source.capture(at: 5, staticMotion: false)
         XCTAssertEqual(blurred.data, Self.bytes("vp-s1-frontal-blurred.jpg"))
-        XCTAssertEqual(blurred.tiltDegrees, 9)
-        XCTAssertEqual(blurred.tiltDegrees, VirtualCameraSource.retakeTiltDegrees)
+        // The blurred render is not turned, so it reports the same tilt as a sharp shot would:
+        // the photo check must not say the phone was tilted for a photo that is only blurred.
+        XCTAssertEqual(blurred.tiltDegrees, VirtualCameraSource.drift(at: 5, staticMotion: false).rollDegrees, accuracy: 1e-12)
         XCTAssertEqual(blurred.key, DemoAssetKey(stageIndex: 1, angle: .frontal, variant: .blurred))
         XCTAssertFalse(source.practiceRetake)
 
@@ -159,5 +160,58 @@ final class VirtualCameraSourceTests: XCTestCase {
         XCTAssertNotNil(source.previewImage)
         // The viewfinder always shows the sharp render, even with the retake switch on.
         XCTAssertEqual(requested, ["vp-s2-rightOblique.jpg", "vp-s2-frontal.jpg"])
+    }
+
+    // MARK: - Rendered roll
+
+    private static let groundTruthJSON = Data("""
+    {"stages": [{"index": 1, "camera": {"rollDegrees": 0}},
+                {"index": 2},
+                {"index": 4, "camera": {"rollDegrees": 4, "radiusMetres": 1.098}}]}
+    """.utf8)
+
+    func testRenderedRollsAreReadFromTheGroundTruthCameraRecords() {
+        let rolls = VirtualCameraSource.renderedRolls(from: Self.groundTruthJSON)
+        XCTAssertEqual(rolls, [1: 0, 4: 4])
+        XCTAssertEqual(VirtualCameraSource.renderedRolls(from: nil), [:])
+        XCTAssertEqual(VirtualCameraSource.renderedRolls(from: Data("not json".utf8)), [:])
+    }
+
+    func testARolledRenderReportsItsRollPlusTheDrift() throws {
+        let imageData: (String) -> Data? = { name in
+            name == "ground-truth.json" ? VirtualCameraSourceTests.groundTruthJSON : VirtualCameraSourceTests.bytes(name)
+        }
+        let rolled = makeSource(setIndex: 4, imageData: imageData)
+        XCTAssertEqual(rolled.renderedRollDegrees, -4)
+        let still = try rolled.capture(at: 2, staticMotion: true)
+        XCTAssertEqual(still.tiltDegrees, -4)
+        let moving = try rolled.capture(at: 2, staticMotion: false)
+        XCTAssertEqual(moving.tiltDegrees, -4 + VirtualCameraSource.drift(at: 2, staticMotion: false).rollDegrees, accuracy: 1e-12)
+        XCTAssertEqual(rolled.tiltDegrees(at: 2, staticMotion: false), moving.tiltDegrees, accuracy: 1e-12)
+
+        // The retake frontal of a rolled stage reports the same roll, never a made-up tilt.
+        rolled.practiceRetake = true
+        let blurred = try rolled.capture(at: 2, staticMotion: true)
+        XCTAssertEqual(blurred.key.variant, .blurred)
+        XCTAssertEqual(blurred.tiltDegrees, -4)
+
+        // Level stages and stages without a camera record report only the drift.
+        XCTAssertEqual(makeSource(setIndex: 1, imageData: imageData).renderedRollDegrees, 0)
+        XCTAssertEqual(makeSource(setIndex: 2, imageData: imageData).renderedRollDegrees, 0)
+        XCTAssertEqual(makeSource(setIndex: 3).renderedRollDegrees, 0)
+    }
+
+    /// The sign convention against the bundled renders: the viewfinder turns the level line by
+    /// -roll, so for a rolled stage -roll must turn the same way as the rendered midline leans
+    /// (notch to midline bottom, clockwise positive on screen).
+    func testBundledRenderedRollMatchesTheMidlineLean() throws {
+        guard let bundled = DemoPatient.loadBundled() else { throw XCTSkip("no bundled virtual patient") }
+        for stage in bundled.stages {
+            let source = VirtualCameraSource(patient: bundled, setIndex: stage.index, angle: .frontal)
+            guard let truth = bundled.truth(stage: stage.index, angle: .frontal),
+                  let notch = truth[.sternalNotch], let bottom = truth[.midlineBottom] else { continue }
+            let lean = atan2(notch.x - bottom.x, bottom.y - notch.y) * 180 / Double.pi
+            XCTAssertEqual(-source.renderedRollDegrees, lean, accuracy: 1.0, "stage \(stage.index)")
+        }
     }
 }

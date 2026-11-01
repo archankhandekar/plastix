@@ -22,21 +22,21 @@ final class VirtualCameraSource: ObservableObject {
         }
     }
 
-    /// Tilt reported with the "Practise a retake" frontal, so the photo check offers Retake first.
-    static let retakeTiltDegrees: Double = 9
-
     let patient: DemoPatient
     /// The 1-based set index this capture is for. It can be past the last rendered stage.
     let setIndex: Int
 
     /// Which view is in front of the virtual camera.
     @Published var angle: ViewAngle
-    /// When on, the next frontal shot returns the blurred render with a 9-degree tilt, and
-    /// the switch then turns itself off. Obliques ignore it.
+    /// When on, the next frontal shot returns the blurred render (its tilt is reported as for
+    /// any other shot: the render is not turned), and the switch then turns itself off.
+    /// Obliques ignore it.
     @Published var practiceRetake: Bool = false
 
     private let imageData: (String) -> Data?
     private var imageCache: [String: UIImage] = [:]
+    /// The camera roll each stage was rendered with, read once from the ground truth.
+    private lazy var renderedRolls: [Int: Double] = VirtualCameraSource.renderedRolls(from: imageData("ground-truth.json"))
 
     init(patient: DemoPatient, setIndex: Int, angle: ViewAngle,
          imageData: @escaping (String) -> Data? = { DemoPatient.imageData(named: $0) }) {
@@ -77,22 +77,59 @@ final class VirtualCameraSource: ObservableObject {
         return (CGSize(width: x, height: y), roll)
     }
 
+    /// The roll the render for `stageIndex` was made with, in the viewfinder's phone-roll
+    /// convention, from the ground truth's `camera.rollDegrees`; 0 when the ground truth does
+    /// not record one. The renderer turns its camera by +rollDegrees about the view axis, which
+    /// turns the scene the other way on screen, exactly as a phone rolled by -rollDegrees would.
+    var renderedRollDegrees: Double {
+        -(renderedRolls[stageIndex] ?? 0)
+    }
+
+    /// The tilt a shot at time `t` reports: the roll baked into the render plus the handheld
+    /// drift. This is also what the level line shows, so a render that leans never reads level.
+    func tiltDegrees(at t: TimeInterval, staticMotion: Bool) -> Double {
+        renderedRollDegrees + VirtualCameraSource.drift(at: t, staticMotion: staticMotion).rollDegrees
+    }
+
     /// Takes the "photo" at time `t`. With `practiceRetake` on and the frontal in front of the
-    /// camera, this returns the blurred render with a 9-degree tilt once and turns the switch
-    /// off. Otherwise it returns the sharp render with the current drift roll as the tilt.
+    /// camera, this returns the blurred render once and turns the switch off. Otherwise it
+    /// returns the sharp render. Either way the tilt is `tiltDegrees(at:staticMotion:)`: the
+    /// blurred render is not turned, so the photo check never says the phone was tilted
+    /// for a photo that is only blurred.
     func capture(at t: TimeInterval, staticMotion: Bool) throws -> (data: Data, tiltDegrees: Double, key: DemoAssetKey) {
         let stage = stageIndex
         guard let view = patient.view(stage: stage, angle: angle) else {
             throw SourceError.missingPhoto("stage \(stage) \(angle.rawValue)")
         }
+        let tilt = tiltDegrees(at: t, staticMotion: staticMotion)
         if practiceRetake, angle == .frontal, let blurredName = view.blurredImage {
             guard let data = imageData(blurredName) else { throw SourceError.missingPhoto(blurredName) }
             practiceRetake = false
-            return (data, VirtualCameraSource.retakeTiltDegrees,
-                    DemoAssetKey(stageIndex: stage, angle: angle, variant: .blurred))
+            return (data, tilt, DemoAssetKey(stageIndex: stage, angle: angle, variant: .blurred))
         }
         guard let data = imageData(view.image) else { throw SourceError.missingPhoto(view.image) }
-        let roll = VirtualCameraSource.drift(at: t, staticMotion: staticMotion).rollDegrees
-        return (data, roll, DemoAssetKey(stageIndex: stage, angle: angle, variant: .sharp))
+        return (data, tilt, DemoAssetKey(stageIndex: stage, angle: angle, variant: .sharp))
+    }
+
+    // MARK: - Rendered roll
+
+    private struct CameraRecords: Decodable {
+        struct Stage: Decodable {
+            struct Camera: Decodable { let rollDegrees: Double? }
+            let index: Int
+            let camera: Camera?
+        }
+        let stages: [Stage]
+    }
+
+    /// Stage index to the renderer's `camera.rollDegrees`, from ground-truth JSON bytes.
+    /// Empty when the bytes are missing or do not decode.
+    nonisolated static func renderedRolls(from groundTruth: Data?) -> [Int: Double] {
+        guard let groundTruth, let records = try? JSONDecoder().decode(CameraRecords.self, from: groundTruth) else { return [:] }
+        var rolls: [Int: Double] = [:]
+        for stage in records.stages {
+            if let roll = stage.camera?.rollDegrees { rolls[stage.index] = roll }
+        }
+        return rolls
     }
 }

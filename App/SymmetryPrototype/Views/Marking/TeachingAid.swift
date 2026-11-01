@@ -76,34 +76,61 @@ enum TeachingCheck {
     }
 }
 
-/// Hollow dashed violet circles at the virtual patient's ground-truth points, mapped from
-/// pixels through the canvas fit rect. Drawn only on practice photos.
-struct TeachingRings: View {
-    let truth: LandmarkSet
-    let radiusPixels: Double
-    /// The pixel size the truth coordinates refer to.
-    let pixelSize: CGSize
-    /// Where the photo sits in the canvas.
-    let fit: CGRect
+/// The virtual patient's ground-truth points as labelled target marks, mapped from pixels
+/// through the canvas fit rect. Drawn only on practice photos, inside the marking canvas's
+/// own pass so their labels share one collision check with the placed marks.
+///
+/// Each target is a solid ring at the true check radius (2 sigma L, the size of the ± for one
+/// point) with a light fill, plus four short ticks outside it, so even a ring a few points
+/// across reads as a clear target and never breaks into dashes. Truth is quiet Plate ink:
+/// violet stays for what a hand placed, and blue for what the app derived.
+enum TeachingRings {
+    /// One drawn target, in canvas points.
+    struct Target {
+        let type: LandmarkType
+        let center: CGPoint
+        /// The ring plus its ticks; labels keep outside this.
+        let outerRadius: CGFloat
+    }
 
-    var body: some View {
-        Canvas { ctx, _ in
-            guard pixelSize.width > 0, pixelSize.height > 0 else { return }
-            let sx = fit.width / pixelSize.width, sy = fit.height / pixelSize.height
-            let r = max(4, CGFloat(radiusPixels) * sx)
-            let dash: [CGFloat] = [5, 4]
-            for type in LandmarkType.allCases {
-                guard let p = truth[type] else { continue }
-                let c = CGPoint(x: fit.minX + CGFloat(p.x) * sx, y: fit.minY + CGFloat(p.y) * sy)
-                let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
-                // A dashed Plate halo under the dashes keeps the ring hollow and readable on skin.
-                ctx.stroke(ring, with: .color(Theme.Colors.plate.opacity(0.7)),
-                           style: StrokeStyle(lineWidth: 4, lineCap: .butt, dash: dash))
-                ctx.stroke(ring, with: .color(Theme.Colors.markerOnPlate),
-                           style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: dash))
-            }
+    /// The smallest ring drawn, so a tiny radius still shows a ring and not a dot.
+    static let minimumRingRadius: CGFloat = 4
+    private static let tickGap: CGFloat = 3
+    private static let tickLength: CGFloat = 6
+
+    /// Where each target sits, without drawing.
+    static func targets(truth: LandmarkSet, radiusPixels: Double, pixelSize: CGSize, fit: CGRect) -> [Target] {
+        guard pixelSize.width > 0, pixelSize.height > 0 else { return [] }
+        let sx = fit.width / pixelSize.width, sy = fit.height / pixelSize.height
+        let r = max(minimumRingRadius, CGFloat(radiusPixels) * sx)
+        return LandmarkType.allCases.compactMap { type in
+            guard let p = truth[type] else { return nil }
+            let c = CGPoint(x: fit.minX + CGFloat(p.x) * sx, y: fit.minY + CGFloat(p.y) * sy)
+            return Target(type: type, center: c, outerRadius: r + tickGap + tickLength)
         }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+    }
+
+    /// Draws the targets and returns them, for label placement.
+    @discardableResult
+    static func draw(in ctx: GraphicsContext, truth: LandmarkSet, radiusPixels: Double,
+                     pixelSize: CGSize, fit: CGRect) -> [Target] {
+        let targets = targets(truth: truth, radiusPixels: radiusPixels, pixelSize: pixelSize, fit: fit)
+        for target in targets {
+            let c = target.center
+            let r = target.outerRadius - tickGap - tickLength
+            let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
+            var ticks = Path()
+            for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] as [(CGFloat, CGFloat)] {
+                ticks.move(to: CGPoint(x: c.x + dx * (r + tickGap), y: c.y + dy * (r + tickGap)))
+                ticks.addLine(to: CGPoint(x: c.x + dx * (r + tickGap + tickLength), y: c.y + dy * (r + tickGap + tickLength)))
+            }
+            ctx.fill(ring, with: .color(Theme.Colors.plateInk.opacity(0.18)))
+            ctx.stroke(ring, with: .color(Theme.Colors.plate.opacity(0.75)), lineWidth: 3.5)
+            ctx.stroke(ticks, with: .color(Theme.Colors.plate.opacity(0.75)),
+                       style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+            ctx.stroke(ring, with: .color(Theme.Colors.plateInk), lineWidth: 1.5)
+            ctx.stroke(ticks, with: .color(Theme.Colors.plateInk), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+        }
+        return targets
     }
 }
