@@ -9,6 +9,7 @@ struct ReviewView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var navigator: AppNavigator
+    @EnvironmentObject private var stores: SessionStores
     @Environment(\.sessionKind) private var kind
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sessionID: UUID
@@ -57,6 +58,9 @@ struct ReviewView: View {
             .fullScreenCover(item: $captureTarget) { target in
                 CaptureView(sessionID: sessionID, captureSet: target.set, setIndex: target.index, anglesToCapture: target.angles)
                     .sessionScope(kind)
+                    .environmentObject(stores)
+                    .environmentObject(navigator)
+                    .environmentObject(settings)
             }
             .confirmationDialog(retakeCandidate.map(retakeWarning) ?? "",
                                 isPresented: $confirmRetake, titleVisibility: .visible) {

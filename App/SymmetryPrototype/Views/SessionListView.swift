@@ -95,6 +95,9 @@ private struct SessionListContent: View {
             }
         }) {
             NewSessionSheet(onCreated: { created in pendingPush = created.id })
+                .environmentObject(stores)
+                .environmentObject(navigator)
+                .environmentObject(settings)
         }
         .confirmationDialog("Delete this session and all of its images?",
                             isPresented: .init(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),

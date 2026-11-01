@@ -159,10 +159,18 @@ struct SessionView: View {
                 showingNewSet = false
             }
             .sessionScope(kind)
+            // Explicit, so the sheet never depends on environment inheritance; stores sits
+            // above sessionScope, which reads it.
+            .environmentObject(stores)
+            .environmentObject(navigator)
+            .environmentObject(settings)
         }
         .fullScreenCover(item: $captureTarget, onDismiss: { flagsRevision += 1 }) { target in
             CaptureView(sessionID: sessionID, captureSet: target.set, setIndex: target.index, anglesToCapture: target.angles)
                 .sessionScope(kind)
+                .environmentObject(stores)
+                .environmentObject(navigator)
+                .environmentObject(settings)
         }
     }
 
