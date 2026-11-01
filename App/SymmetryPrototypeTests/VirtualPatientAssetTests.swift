@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import SymmetryCore
 @testable import SymmetryPrototype
 
@@ -206,6 +207,67 @@ final class VirtualPatientAssetTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testStageCameraRollIsRecordedForTheLevelReadout() throws {
+        // Set 4 is rendered with the camera rolled 4 degrees. Ground truth records the roll
+        // a level sensor would have reported (MotionLevelService convention), so the app can
+        // report it instead of calling a leaning photo level.
+        let expected: [Int: (roll: Double, level: Double)] = [1: (0, 0), 2: (0, 0), 3: (0, 0), 4: (4, -4)]
+        for stage in try stages() {
+            let index = try XCTUnwrap(stage["index"] as? Int)
+            let camera = try XCTUnwrap(stage["camera"] as? [String: Any])
+            let want = try XCTUnwrap(expected[index])
+            XCTAssertEqual(try XCTUnwrap(camera["rollDegrees"] as? Double), want.roll, "stage \(index)")
+            XCTAssertEqual(try XCTUnwrap(camera["levelRollDegrees"] as? Double), want.level, "stage \(index)")
+        }
+    }
+
+    func testClosureLinesFollowTheStageStory() throws {
+        // Set 1 is preoperative (pen marks, no incision); every later set carries the closed
+        // incision on the patient-left breast.
+        for stage in try stages() {
+            let index = try XCTUnwrap(stage["index"] as? Int)
+            let params = try XCTUnwrap(stage["params"] as? [String: Any])
+            XCTAssertEqual(params["penMarks"] as? Bool, index == 1, "stage \(index)")
+            XCTAssertEqual(params["closureLines"] as? Bool, index > 1, "stage \(index)")
+        }
+    }
+
+    func testBackdropIsNeutralCharcoal() throws {
+        // The construction lines are blue and the marks violet, so the backdrop must be a
+        // neutral charcoal (#23292D), not a teal that swallows them. The top corners of every
+        // render are backdrop.
+        for stage in try stages() {
+            for (name, _) in try imageNames(stage) {
+                let data = try Data(contentsOf: try XCTUnwrap(url(name)))
+                let image = try XCTUnwrap(UIImage(data: data)?.cgImage, name)
+                for corner in [CGRect(x: 8, y: 8, width: 32, height: 32), CGRect(x: 1160, y: 8, width: 32, height: 32)] {
+                    let mean = try meanRGB(image, corner)
+                    XCTAssertEqual(mean.r, 0x23, accuracy: 8, "\(name) red")
+                    XCTAssertEqual(mean.g, 0x29, accuracy: 8, "\(name) green")
+                    XCTAssertEqual(mean.b, 0x2D, accuracy: 8, "\(name) blue")
+                }
+            }
+        }
+    }
+
+    /// Mean sRGB of a rectangle (top-left origin) of the image, 0 to 255 per channel.
+    private func meanRGB(_ image: CGImage, _ rect: CGRect) throws -> (r: Double, g: Double, b: Double) {
+        let w = Int(rect.width), h = Int(rect.height)
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        try bytes.withUnsafeMutableBytes { buf in
+            let ctx = try XCTUnwrap(CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                              space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            // CoreGraphics puts y = 0 at the bottom: shift the image so the rect lands at the origin.
+            ctx.draw(image, in: CGRect(x: -rect.minX, y: rect.maxY - CGFloat(image.height),
+                                       width: CGFloat(image.width), height: CGFloat(image.height)))
+        }
+        var r = 0.0, g = 0.0, b = 0.0
+        for i in 0..<(w * h) { r += Double(bytes[i * 4]); g += Double(bytes[i * 4 + 1]); b += Double(bytes[i * 4 + 2]) }
+        let n = Double(w * h)
+        return (r / n, g / n, b / n)
     }
 
     func testFolderIsUnderSizeLimit() throws {

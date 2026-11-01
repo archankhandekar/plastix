@@ -27,15 +27,33 @@ struct PositioningRecord: Encodable {
 }
 
 struct CameraRecord: Encodable {
+    /// Rotation of the render camera about its view axis, counterclockwise as seen from
+    /// behind the camera (SceneKit's local +z). The photo content turns clockwise.
     let rollDegrees: Double
     let radiusMetres: Double
     let yFovDegrees: Double
+    /// Added after version 1 shipped (additive): the phone roll a level sensor would
+    /// have reported while taking this render, in MotionLevelService's convention
+    /// (atan2(g.x, -g.y); positive is the phone turned clockwise as the user sees the
+    /// screen). Every view of the stage shares it. The app adds it to the handheld drift
+    /// so a rolled render is never called level.
+    let levelRollDegrees: Double
+
+    init(_ stage: StageSpec) {
+        rollDegrees = stage.rollDegrees
+        radiusMetres = stage.radiusMetres
+        yFovDegrees = Stages.yFovDegrees
+        levelRollDegrees = stage.rollDegrees == 0 ? 0 : -stage.rollDegrees
+    }
 }
 
 struct ParamsRecord: Encodable {
     let left: MoundParams
     let right: MoundParams
     let penMarks: Bool
+    /// Added after version 1 shipped (additive): the patient-left breast carries a
+    /// closed reduction incision (periareolar and vertical, with sutures).
+    let closureLines: Bool
 }
 
 struct ViewRecord: Encodable {
@@ -249,7 +267,7 @@ enum GroundTruth {
     /// never bundled.
     static func debugOverlay(_ image: CGImage, truth: ViewTruth) -> CGImage {
         let w = image.width, h = image.height
-        let ctx = Watermark.context(width: w, height: h)
+        let ctx = PostProcess.context(width: w, height: h)
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
         func cg(_ p: Point2D) -> CGPoint { CGPoint(x: p.x, y: Double(h) - p.y) }
 

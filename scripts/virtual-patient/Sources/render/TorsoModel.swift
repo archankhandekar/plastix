@@ -16,18 +16,23 @@ struct TorsoModel {
 
     // MARK: - Constants
 
-    static let thetaCount = 256
-    static let yCount = 384
+    static let thetaCount = 512
+    static let yCount = 512
     static let yMin = -0.50
-    static let yMax = 0.12
+    /// The neck runs past the top of every frame, so no cut end is ever in shot.
+    static let yMax = 0.30
     static let exponent = 2.6
     static let ryUpper = 0.070
-    static let neckRadius = 0.065
-    static let neckStart = 0.07
+    static let neckRadius = 0.066
+    static let neckStart = 0.115
+    /// Where the shoulder ease begins: the width just above the notch level, the depth a
+    /// little below it, so the upper chest rolls back into the neck without an edge.
+    static let widthEaseStart = -0.01
+    static let depthEaseStart = -0.05
     static let umbilicusY = -0.36
 
     /// Half-width a(y): (y, a) knots, ascending y.
-    static let widthKnots: [(Double, Double)] = [(-0.50, 0.160), (-0.34, 0.135), (-0.24, 0.145), (-0.10, 0.168), (0.02, 0.200)]
+    static let widthKnots: [(Double, Double)] = [(-0.50, 0.160), (-0.34, 0.135), (-0.24, 0.145), (-0.10, 0.163), (0.02, 0.160)]
     /// Half-depth b(y): (y, b) knots, ascending y.
     static let depthKnots: [(Double, Double)] = [(-0.50, 0.115), (-0.34, 0.105), (-0.12, 0.120), (0.02, 0.110)]
 
@@ -54,23 +59,24 @@ struct TorsoModel {
         return h00 * p0 + h10 * h * tangent(k) + h01 * p1 + h11 * h * tangent(k + 1)
     }
 
-    /// Above y = 0 the radius eases on a quarter ellipse to the neck radius at +0.07,
-    /// then stays constant (the neck stump).
-    static func shoulderEase(_ atZero: Double, _ y: Double) -> Double {
+    /// Above y = 0 the radius eases to the neck radius at `neckStart` along a smoothstep:
+    /// a rounded shoulder, a sloping trapezius line and a concave fillet into the neck,
+    /// which then runs straight up and out of frame.
+    static func shoulderEase(_ start: Double, _ atStart: Double, _ y: Double) -> Double {
         if y >= neckStart { return neckRadius }
-        let t = y / neckStart
-        return neckRadius + (atZero - neckRadius) * (1 - t * t).squareRoot()
+        let t = (y - start) / (neckStart - start)
+        return neckRadius + (atStart - neckRadius) * (1 - t * t * (3 - 2 * t))
     }
 
-    static let widthAtZero = spline(widthKnots, 0)
-    static let depthAtZero = spline(depthKnots, 0)
+    static let widthAtEase = spline(widthKnots, widthEaseStart)
+    static let depthAtEase = spline(depthKnots, depthEaseStart)
 
     static func halfWidth(_ y: Double) -> Double {
-        y > 0 ? shoulderEase(widthAtZero, y) : spline(widthKnots, y)
+        y > widthEaseStart ? shoulderEase(widthEaseStart, widthAtEase, y) : spline(widthKnots, y)
     }
 
     static func halfDepth(_ y: Double) -> Double {
-        y > 0 ? shoulderEase(depthAtZero, y) : spline(depthKnots, y)
+        y > depthEaseStart ? shoulderEase(depthEaseStart, depthAtEase, y) : spline(depthKnots, y)
     }
 
     @inline(__always) static func spow(_ v: Double) -> Double {
@@ -124,7 +130,19 @@ struct TorsoModel {
 
     func mound(_ side: Double) -> MoundParams { side > 0 ? left : right }
 
-    /// The mound height plus the fold groove and the nipple dome for one side.
+    /// Profile exponent of the mound: 2 on the upper pole (a long, gently concave slope
+    /// from the chest) easing to 1.1 on the lower pole (a full lower pole that turns
+    /// sharply into the fold). Smooth in v, so the surface has no seam at the centre line.
+    @inline(__always) static func profileExponent(_ v: Double) -> Double {
+        2.0 - 0.9 * smoothstep(0.35, -0.55, v)
+    }
+
+    /// Papilla radius and height, and the raised areola, metres.
+    static let papillaRadius = 0.0055
+    static let papillaHeight = 0.0050
+    static let areolaRise = 0.0012
+
+    /// The mound height plus the fold groove and the nipple-areola complex for one side.
     func breastField(side s: Double, xb: Double, y: Double) -> Double {
         let p = mound(s)
         let cx = s * p.nippleX, cy = p.nippleY
@@ -133,7 +151,7 @@ struct TorsoModel {
         let u = (xb - cx) / p.rx, v = (y - cy) / ry
         let r2 = u * u + v * v
         var h = 0.0
-        if r2 < 1 { let k = 1 - r2; h += p.P * k * k }
+        if r2 < 1 { h += p.P * pow(1 - r2, TorsoModel.profileExponent(v)) }
 
         // Fold crease: a groove centred on the r = 1 boundary below the centre, fading
         // out toward the sides of the mound.
@@ -147,10 +165,12 @@ struct TorsoModel {
             }
         }
 
-        // Nipple-areola dome.
+        // Nipple-areola complex: a slightly raised areola and a papilla with a rounded,
+        // flat-topped profile. Both peak exactly at the apex.
         let dx = xb - cx, dy = y - cy
-        let d2 = dx * dx + dy * dy
-        if d2 < 0.006 * 0.006 { let k = 1 - d2 / (0.006 * 0.006); h += 0.004 * k * k }
+        let d = (dx * dx + dy * dy).squareRoot()
+        h += TorsoModel.areolaRise * (1 - TorsoModel.smoothstep(0.6, 1.0, d / Texture.areolaRadius))
+        h += TorsoModel.papillaHeight * (1 - TorsoModel.smoothstep(0.45, 1.0, d / TorsoModel.papillaRadius))
         return h
     }
 
@@ -161,31 +181,45 @@ struct TorsoModel {
         return (qx * qx + qy * qy).squareRoot()
     }
 
-    /// Total displacement along the base normal at (theta, y).
-    func displacement(theta: Double, y: Double) -> Double {
+    /// The breasts project mostly forward, as they do on a standing patient, rather than
+    /// along the curved base normal (which pushed a lateral apex out to the silhouette):
+    /// their displacement direction is the base normal blended this far toward +z.
+    static let forwardBlend = 0.55
+
+    /// Total displacement at (theta, y): along the base normal for the chest features and
+    /// along the forward-blended direction for the breasts, both gated to the front.
+    func displacement(theta: Double, y: Double) -> (chest: Double, breast: Double) {
         let gate = TorsoModel.frontGate(theta: theta, y: y)
-        if gate <= 0 { return 0 }
+        if gate <= 0 { return (0, 0) }
         let xb = TorsoModel.base(theta: theta, y: y).x
-        var h = breastField(side: 1, xb: xb, y: y) + breastField(side: -1, xb: xb, y: y)
+        let breast = breastField(side: 1, xb: xb, y: y) + breastField(side: -1, xb: xb, y: y)
+        var h = 0.0
 
         // Sternal notch.
         h -= 0.006 * exp(-(xb * xb + y * y) / (2 * 0.012 * 0.012))
-        // Clavicle ridges.
+        // Clavicle ridges, rising gently from the notch toward the shoulders.
         for s in [-1.0, 1.0] {
-            let d = TorsoModel.segmentDistance(xb, y, s * 0.02, 0.005, s * 0.15, 0.02)
-            h += 0.004 * exp(-d * d / (2 * 0.008 * 0.008))
+            let d = TorsoModel.segmentDistance(xb, y, s * 0.022, 0.006, s * 0.13, 0.028)
+            h += 0.003 * exp(-d * d / (2 * 0.009 * 0.009))
         }
         // Umbilicus with a shallow rim.
         let uy = y - TorsoModel.umbilicusY
         let du = (xb * xb + uy * uy).squareRoot()
         h -= 0.006 * exp(-du * du / (2 * 0.007 * 0.007))
         h += 0.0015 * exp(-(du - 0.010) * (du - 0.010) / (2 * 0.002 * 0.002))
-        return gate * h
+        return (gate * h, gate * breast)
     }
 
     /// A point on the displaced surface.
     func point(theta: Double, y: Double) -> SIMD3<Double> {
-        TorsoModel.base(theta: theta, y: y) + TorsoModel.baseNormal(theta: theta, y: y) * displacement(theta: theta, y: y)
+        let n = TorsoModel.baseNormal(theta: theta, y: y)
+        let h = displacement(theta: theta, y: y)
+        var p = TorsoModel.base(theta: theta, y: y) + n * h.chest
+        if h.breast != 0 {
+            let w = TorsoModel.forwardBlend
+            p += simd_normalize(n * (1 - w) + SIMD3(0, 0, w)) * h.breast
+        }
+        return p
     }
 
     /// A point on the displaced front surface at base-surface x and height y.

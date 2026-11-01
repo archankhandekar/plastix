@@ -12,9 +12,19 @@ enum Texture {
     static let grainCell = 0.006
 
     static let skin = RGB(0xCD, 0xB9, 0xA9)
-    static let areola = RGB(0xA8, 0x8E, 0x80)
-    static let pen = RGB(0x4B, 0x2A, 0x7B)
-    static let drape = RGB(0x2F, 0x6F, 0x73)
+    static let areola = RGB(0xA4, 0x84, 0x76)
+    static let papilla = RGB(0x92, 0x70, 0x63)
+    /// Blue-black skin-marker ink, so pen lines on the skin are never mistaken for the
+    /// app's violet 'you marked this' ink.
+    static let pen = RGB(0x1F, 0x2A, 0x44)
+    /// A closed incision and its sutures.
+    static let incision = RGB(0x7A, 0x55, 0x4C)
+    static let suture = RGB(0x24, 0x2A, 0x36)
+    /// The backdrop: a neutral dark charcoal, so the app's blue derived lines (#56B6D6)
+    /// and violet marks read against it (about 6:1 for the blue).
+    static let backdrop = RGB(0x23, 0x29, 0x2D)
+    /// The hip drape: a darker surgical green, distinct from the backdrop.
+    static let drape = RGB(0x2E, 0x55, 0x48)
     static let areolaRadius = 0.020
 
     struct RGB {
@@ -124,9 +134,48 @@ enum Texture {
         return abs(rho - 1) * local
     }
 
-    /// The diffuse texture for one stage: grained clay, areolas at the apexes and, for
-    /// stage 1 only, gentian-violet preoperative pen lines.
-    static func skinImage(model: TorsoModel, penMarks: Bool, layout: Layout, grain: [Float]) -> CGImage {
+    /// Distance from (x, y) to the closure line of a reduction on mound p (side s): a
+    /// periareolar circle and a vertical limb from the areola down to just above the fold.
+    /// Also returns whether the point sits on a suture (short ticks across the line).
+    static func closureDistance(_ p: MoundParams, side s: Double, x: Double, y: Double) -> (line: Double, suture: Bool) {
+        let cx = s * p.nippleX, cy = p.nippleY
+        let dx = x - cx, dy = y - cy
+        let d = (dx * dx + dy * dy).squareRoot()
+        let ring = abs(d - areolaRadius)
+        let top = cy - areolaRadius, bottom = p.foldY + 0.006
+        var limb = Double.infinity
+        if y <= top && y >= bottom { limb = abs(dx) } else if y > top { limb = .infinity }
+        let pitch = 0.008, tickHalfWidth = 0.00035, tickHalfLength = 0.0017
+        var suture = false
+        if ring < tickHalfLength {
+            let arc = (atan2(dy, dx) + Double.pi) * areolaRadius
+            let ph = arc.truncatingRemainder(dividingBy: pitch)
+            suture = min(ph, pitch - ph) < tickHalfWidth
+        }
+        if !suture && limb < tickHalfLength {
+            let ph = (top - y).truncatingRemainder(dividingBy: pitch)
+            suture = min(ph, pitch - ph) < tickHalfWidth
+        }
+        return (min(ring, limb), suture)
+    }
+
+    /// The plain grained clay, for the arms (no features).
+    static func clayImage(layout: Layout, grain: [Float]) -> CGImage {
+        let n = size
+        var bytes = [UInt8](repeating: 255, count: n * n * 4)
+        for i in 0..<(n * n) {
+            let c = skin.scaled(Double(grain[i]))
+            bytes[i * 4] = UInt8(max(0, min(255, c.r.rounded())))
+            bytes[i * 4 + 1] = UInt8(max(0, min(255, c.g.rounded())))
+            bytes[i * 4 + 2] = UInt8(max(0, min(255, c.b.rounded())))
+        }
+        return makeImage(bytes, width: n, height: n)
+    }
+
+    /// The diffuse texture for one stage: grained clay, nipple-areola complexes at the
+    /// apexes, on stage 1 blue-black preoperative pen lines, and after resection the
+    /// closed reduction incision on the patient-left breast.
+    static func skinImage(model: TorsoModel, penMarks: Bool, closureLines: Bool, layout: Layout, grain: [Float]) -> CGImage {
         let n = size
         var bytes = [UInt8](repeating: 255, count: n * n * 4)
         let sides: [(Double, MoundParams)] = [(1, model.left), (-1, model.right)]
@@ -140,8 +189,18 @@ enum Texture {
                         let x = a * layout.sinTerm[px]
                         for (s, p) in sides {
                             let d = ((x - s * p.nippleX) * (x - s * p.nippleX) + (y - p.nippleY) * (y - p.nippleY)).squareRoot()
-                            let k = coverage(areolaRadius, d)
-                            if k > 0 { c = c.mixed(areola, k) }
+                            // A soft-edged areola that deepens slightly toward the centre,
+                            // and a darker papilla.
+                            let k = coverage(areolaRadius, d, 0.003)
+                            if k > 0 { c = c.mixed(areola.scaled(1.0 - 0.05 * max(0, 1 - d / areolaRadius)), k) }
+                            let kp = coverage(TorsoModel.papillaRadius * 0.9, d, 0.0015)
+                            if kp > 0 { c = c.mixed(papilla, kp) }
+                        }
+                        if closureLines {
+                            let cl = closureDistance(model.left, side: 1, x: x, y: y)
+                            let line = coverage(0.0007, cl.line, 0.0006)
+                            if line > 0 { c = c.mixed(incision, line * 0.75) }
+                            if cl.suture { c = c.mixed(suture, 0.55) }
                         }
                     }
                     c = c.scaled(Double(grain[py * n + px]))
@@ -169,22 +228,27 @@ enum Texture {
 
     // MARK: - Drape
 
-    /// Weave modulation (plus or minus) of the drape cloth.
-    static let weaveAmplitude = 0.06
-    /// One weave cell, texels; the tile holds 2 x 2 cells.
-    static let weaveCell = 8
+    /// Cloth modulation (plus or minus) of the hip drape: a faint, soft value noise, so
+    /// the sheet reads as matte cloth without the stripes a fine weave aliases into.
+    static let weaveAmplitude = 0.025
+    /// Noise cell of the drape cloth, texels of the 256 px tile.
+    static let weaveCell = 16
 
-    /// A 16 x 16 tile of basket weave: 8 px cells alternating horizontal and vertical
-    /// threads, two threads per cell, on #2F6F73.
+    /// A 256 x 256 tileable tile of soft cloth noise on the drape green.
     static func drapeTile() -> CGImage {
-        let n = weaveCell * 2
+        let n = 256, period = n / weaveCell
         var bytes = [UInt8](repeating: 255, count: n * n * 4)
         for y in 0..<n {
             for x in 0..<n {
-                let horizontal = ((x / weaveCell) + (y / weaveCell)) % 2 == 0
-                let along = Double(horizontal ? y : x) + 0.5
-                let stripe = cos(2 * Double.pi * along / Double(weaveCell / 2))
-                let c = drape.scaled(1 + weaveAmplitude * stripe)
+                // Value noise wrapped on the tile period, so the tile repeats seamlessly.
+                let fx = Double(x) / Double(weaveCell), fy = Double(y) / Double(weaveCell)
+                let ix = Int(fx), iy = Int(fy)
+                let tx = fade(fx - Double(ix)), ty = fade(fy - Double(iy))
+                func h(_ a: Int, _ b: Int) -> Double { hash(Int64(a % period), Int64(b % period), 7) }
+                let top = h(ix, iy) + (h(ix + 1, iy) - h(ix, iy)) * tx
+                let bottom = h(ix, iy + 1) + (h(ix + 1, iy + 1) - h(ix, iy + 1)) * tx
+                let g = (top + (bottom - top) * ty) * 2 - 1
+                let c = drape.scaled(1 + weaveAmplitude * g)
                 let o = (y * n + x) * 4
                 bytes[o] = UInt8(max(0, min(255, c.r.rounded())))
                 bytes[o + 1] = UInt8(max(0, min(255, c.g.rounded())))

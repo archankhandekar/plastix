@@ -62,6 +62,7 @@ print("render: building the texture layout and grain field (seed \(Stages.seed))
 let layout = Texture.Layout()
 let grain = Texture.grainField(layout)
 let weave = Texture.drapeTile()
+let clay = Texture.clayImage(layout: layout, grain: grain)
 
 var records: [StageRecord] = []
 var metricsByStage: [Int: FrontalMetrics] = [:]
@@ -79,8 +80,9 @@ for stage in stages {
             guard gate == 1 else { fail("Stage \(stage.index): front gate is \(gate) at a landmark (x \(s * p.nippleX), y \(y))") }
         }
     }
-    let skin = Texture.skinImage(model: model, penMarks: stage.penMarks, layout: layout, grain: grain)
-    let scene = SceneBuilder.scene(model: model, skin: skin, weave: weave)
+    let skin = Texture.skinImage(model: model, penMarks: stage.penMarks, closureLines: stage.closureLines,
+                                 layout: layout, grain: grain)
+    let scene = SceneBuilder.scene(model: model, skin: skin, clay: clay, weave: weave)
     let renderer = SceneBuilder.makeRenderer(scene: scene)
 
     var views: [ViewKind: ViewRecord] = [:]
@@ -107,19 +109,18 @@ for stage in stages {
             }
         }
 
-        let marked = Watermark.burn(raw)
         let name = "vp-s\(stage.index)-\(view.rawValue).jpg"
-        let jpeg = QualityCheck.encodeJPEG(marked)
+        let jpeg = QualityCheck.encodeJPEG(raw)
         write(jpeg, to: outDir, name)
         let q = QualityCheck.measure(jpeg: jpeg)
         quality[view.rawValue] = q
         if let p = QualityCheck.problem(q, blurred: false, name: name) { problems.append(p) }
-        write(QualityCheck.encodePNG(GroundTruth.debugOverlay(marked, truth: truth)), to: debugDir,
+        write(QualityCheck.encodePNG(GroundTruth.debugOverlay(raw, truth: truth)), to: debugDir,
               "vp-s\(stage.index)-\(view.rawValue).png")
 
         var blurredName: String?
         if view == .frontal {
-            let soft = Watermark.blurred(marked)
+            let soft = PostProcess.blurred(raw)
             let bname = "vp-s\(stage.index)-frontal-blurred.jpg"
             let bjpeg = QualityCheck.encodeJPEG(soft)
             write(bjpeg, to: outDir, bname)
@@ -142,8 +143,8 @@ for stage in stages {
         index: stage.index,
         stage: stage.key,
         positioning: PositioningRecord(tableAngle: "0°", armPosition: "at sides", lighting: "overhead lights", note: "Virtual patient"),
-        camera: CameraRecord(rollDegrees: stage.rollDegrees, radiusMetres: stage.radiusMetres, yFovDegrees: Stages.yFovDegrees),
-        params: ParamsRecord(left: stage.left, right: stage.right, penMarks: stage.penMarks),
+        camera: CameraRecord(stage),
+        params: ParamsRecord(left: stage.left, right: stage.right, penMarks: stage.penMarks, closureLines: stage.closureLines),
         views: ViewsRecord(frontal: views[.frontal]!, leftOblique: views[.leftOblique]!, rightOblique: views[.rightOblique]!),
         selfCheck: GroundTruth.selfCheck(metrics),
         quality: QualityRecord(frontal: entry("frontal"), leftOblique: entry("leftOblique"), rightOblique: entry("rightOblique"),
