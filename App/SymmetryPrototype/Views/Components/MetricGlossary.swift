@@ -120,26 +120,35 @@ struct HowToReadCard: View {
 struct MetricExplainerSheet: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Theme.Spacing.l) {
-                Text("What the numbers mean")
-                    .font(.screenTitle)
-                    .foregroundStyle(Theme.Colors.ink)
-
+            // The nav bar carries the title; the content starts with the first section.
+            VStack(alignment: .leading, spacing: Theme.Spacing.section) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                    sectionTitle("Reading a number")
                     glossaryLine(MetricGlossary.referenceLengthLine)
                     glossaryLine(MetricGlossary.uncertaintyLine)
                     glossaryLine(MetricGlossary.signLine)
+                }
+                .cardStyle()
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                    sectionTitle("Sides and colours")
                     glossaryLine(MetricGlossary.sidesLine)
+                    PatientSidesKey()
+                        .padding(.vertical, Theme.Spacing.xs)
                     glossaryLine(MetricGlossary.provenanceLine)
+                    ProvenanceKey()
+                        .padding(.vertical, Theme.Spacing.xs)
                 }
                 .cardStyle()
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                    sectionTitle("The six numbers")
                     ForEach(MetricGlossary.metricNames, id: \.self) { name in
                         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                             Text(name)
-                                .font(.sectionTitle)
+                                .font(.body.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.ink)
+                                .fixedSize(horizontal: false, vertical: true)
                             Text(MetricGlossary.meaning(for: name))
                                 .font(.body)
                                 .foregroundStyle(Theme.Colors.ink)
@@ -178,6 +187,54 @@ struct MetricExplainerSheet: View {
             .font(.body)
             .foregroundStyle(Theme.Colors.ink)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text)
+            .font(.sectionTitle)
+            .foregroundStyle(Theme.Colors.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The provenance colours, shown rather than named: a violet point for what a hand placed
+/// and a blue line for what the app drew from it.
+struct ProvenanceKey: View {
+    @ScaledMetric(relativeTo: .body) private var dot: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var line: CGFloat = 24
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Theme.Spacing.l) { marked; drawn }
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) { marked; drawn }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MetricGlossary.provenanceLine)
+    }
+
+    private var marked: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Circle()
+                .fill(Theme.Colors.marker)
+                .frame(width: dot, height: dot)
+            Text("What you marked")
+                .font(.support)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var drawn: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Capsule()
+                .fill(Theme.Colors.drape)
+                .frame(width: line, height: 3)
+            Text("What the app drew")
+                .font(.support)
+                .foregroundStyle(Theme.Colors.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

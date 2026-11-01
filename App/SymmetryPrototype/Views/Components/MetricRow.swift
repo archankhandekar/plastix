@@ -21,8 +21,11 @@ struct MetricRow: View {
                     valueText.fixedSize()
                 }
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    nameText
-                    valueText.frame(maxWidth: .infinity, alignment: .trailing)
+                    nameText.fixedSize(horizontal: false, vertical: true)
+                    ReadoutText(MetricFormatter.text(measurement),
+                                color: measurement == nil ? Theme.Colors.graduation : Theme.Colors.ink,
+                                alignment: .trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
             if let explanation {
@@ -98,19 +101,95 @@ struct MetricDeltaRow: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Title and readout on one line when both fit; otherwise the title above and the
+    /// readout on its own line. The readout is never broken between a value and its ±.
     private func line(_ title: String, _ m: MetricValue?, emphasised: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
-            Text(title)
-                .font(.support)
-                .foregroundStyle(Theme.Colors.graduation)
-            Spacer(minLength: 0)
-            Text(MetricFormatter.text(m))
-                .font(emphasised ? .readoutRow.weight(.semibold) : .readoutRow)
-                .foregroundStyle(m == nil ? Theme.Colors.graduation : Theme.Colors.ink)
-                .opacity(dimmed ? 0.6 : 1)
-                .fixedSize(horizontal: false, vertical: true)
-                .multilineTextAlignment(.trailing)
+        ReadoutLine(title: title,
+                    readout: MetricFormatter.text(m),
+                    font: emphasised ? .readoutRow.weight(.semibold) : .readoutRow,
+                    color: m == nil ? Theme.Colors.graduation : Theme.Colors.ink)
+            .opacity(dimmed ? 0.6 : 1)
+    }
+}
+
+/// A MetricFormatter string shown verbatim and kept whole. On one line when it fits;
+/// when even the readout alone is wider than the screen (the largest text sizes), it breaks
+/// only before the ±, so the ± always leads its uncertainty and never dangles.
+/// Layout only: the string itself is never changed.
+struct ReadoutText: View {
+    let text: String
+    var font: Font = .readoutRow
+    var color: Color = Theme.Colors.ink
+    var alignment: TextAlignment = .leading
+
+    init(_ text: String, font: Font = .readoutRow, color: Color = Theme.Colors.ink, alignment: TextAlignment = .leading) {
+        self.text = text
+        self.font = font
+        self.color = color
+        self.alignment = alignment
+    }
+
+    private static let separator = " \u{00B1} "
+
+    private var stackAlignment: HorizontalAlignment {
+        switch alignment {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
         }
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            styled(Text(text)).fixedSize()
+            if let range = text.range(of: Self.separator) {
+                VStack(alignment: stackAlignment, spacing: 0) {
+                    styled(Text(text[..<range.lowerBound]))
+                    // "± 0.021 L": the ± opens the second line with its uncertainty.
+                    styled(Text(text[range.lowerBound...].dropFirst()))
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            styled(Text(text)).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+
+    private func styled(_ t: Text) -> some View {
+        t.font(font)
+            .foregroundStyle(color)
+            .multilineTextAlignment(alignment)
+    }
+}
+
+/// A support-styled title and a readout. Side by side when both fit on one line (readout
+/// trailing); otherwise the title on its own line and the readout below it, whole.
+struct ReadoutLine: View {
+    let title: String
+    let readout: String
+    var font: Font = .readoutRow
+    var color: Color = Theme.Colors.ink
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.m) {
+                titleText.fixedSize()
+                Spacer(minLength: 0)
+                ReadoutText(readout, font: font, color: color).fixedSize()
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                titleText.fixedSize(horizontal: false, vertical: true)
+                ReadoutText(readout, font: font, color: color, alignment: .leading)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.support)
+            .foregroundStyle(Theme.Colors.graduation)
     }
 }
 

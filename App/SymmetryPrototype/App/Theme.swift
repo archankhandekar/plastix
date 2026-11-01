@@ -192,6 +192,20 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         if isDestructive {
             SecondaryButtonStyle.body(configuration: configuration, isEnabled: isEnabled, leadingSymbol: "trash")
+        } else if !isEnabled {
+            // Not available yet: no fill, a dashed Graduation outline and a Graduation label,
+            // which stays legible (about 5:1 on the tray in both appearances) instead of a
+            // faded fill. The dash keeps it apart from the solid secondary outline.
+            configuration.label
+                .font(.actionLabel)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.m)
+                .frame(maxWidth: .infinity, minHeight: Theme.primaryHeight)
+                .foregroundStyle(Theme.Colors.graduation)
+                .background(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                    .strokeBorder(Theme.Colors.graduation,
+                                  style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
+                .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
         } else {
             configuration.label
                 .font(.actionLabel)
@@ -201,7 +215,7 @@ struct PrimaryButtonStyle: ButtonStyle {
                 .foregroundStyle(Theme.Colors.onDrape)
                 .background(Theme.Colors.drape, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
                 .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
-                .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+                .opacity(configuration.isPressed ? 0.8 : 1)
         }
     }
 }
