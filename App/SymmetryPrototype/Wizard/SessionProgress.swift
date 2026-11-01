@@ -153,7 +153,17 @@ struct SessionProgress {
 
         let markPointsStatus: String
         if completeWithFrontal.isEmpty {
-            markPointsStatus = "Needs photos first"
+            // An incomplete set can already have points on its frontal photo (the set screen
+            // offers "Mark points" regardless of completeness); say so instead of hiding the work.
+            let total = LandmarkType.allCases.count
+            let marked = firstIncomplete.map { SessionProgress.pointsMarked(on: $0.set.frontal) } ?? 0
+            if let incomplete = firstIncomplete, incomplete.set.frontal != nil, marked > 0 {
+                markPointsStatus = marked == total
+                    ? "Set \(incomplete.index) marked, photos still missing"
+                    : "\(marked) of \(total) points marked on set \(incomplete.index) · photos still missing"
+            } else {
+                markPointsStatus = "Needs photos first"
+            }
         } else if let unmarked = completeWithFrontal.first(where: { $0.set.frontal?.landmarks?.isComplete != true }) {
             let marked = SessionProgress.pointsMarked(on: unmarked.set.frontal)
             markPointsStatus = "\(marked) of 6 points marked on set \(unmarked.index)"
