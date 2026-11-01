@@ -103,6 +103,20 @@ final class SessionProgressTests: XCTestCase {
         XCTAssertEqual(p.next.detail, "Set 1 still needs: Left oblique, Right oblique")
     }
 
+    func testIncompleteSetWithMarkedFrontalKeepsThePointsVisible() {
+        let p = progress([set(stage: .preoperativeMarking, createdAt: t0, angles: [.frontal], frontalLandmarks: sixPoints)])
+        XCTAssertEqual(p.next.title, "Next: Take the missing photos")
+        XCTAssertEqual(p.states[.takePhotos], .current("1 of 3 photos taken in set 1"))
+        XCTAssertEqual(p.states[.markPoints], .upcoming("Set 1 marked, photos still missing"))
+        XCTAssertFalse(p.isActionable(.markPoints))
+    }
+
+    func testIncompleteSetWithPartialFrontalPointsCountsThem() {
+        let p = progress([set(stage: .preoperativeMarking, createdAt: t0, angles: [.frontal, .leftOblique], frontalLandmarks: twoPoints)])
+        XCTAssertEqual(p.next.title, "Next: Take the missing photo")
+        XCTAssertEqual(p.states[.markPoints], .upcoming("2 of 6 points marked on set 1 · photos still missing"))
+    }
+
     func testCompleteSetWithoutLandmarksAsksForPoints() {
         let p = progress([set(stage: .preoperativeMarking, createdAt: t0)])
         XCTAssertEqual(p.next.title, "Next: Mark 6 points on the frontal photo")

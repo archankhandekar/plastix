@@ -18,6 +18,7 @@ struct SessionView: View {
     @EnvironmentObject private var store: SessionStore
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sessionID: UUID
 
     @State private var route: SessionRoute?
@@ -100,6 +101,16 @@ struct SessionView: View {
                             presentNewSet(after: sets.last, index: sets.count)
                         }
                         .buttonStyle(SecondaryButtonStyle())
+                    }
+
+                    // The bottom bar drops its detail line at accessibility text sizes (it cannot
+                    // scroll), so the same sentence is shown here where it can.
+                    if dynamicTypeSize.isAccessibilitySize {
+                        Text(progress.next.detail)
+                            .font(.body)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
                     deleteCard
