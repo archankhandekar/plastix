@@ -105,7 +105,6 @@ struct ExportView: View {
         .background(Theme.Colors.tray)
         .navigationTitle("Export")
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) { bottomBar }
     }
 
     // MARK: - Summary (shared by the form and the preview)
@@ -137,7 +136,7 @@ struct ExportView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
             Text(preview
                  ? "A report from this session would contain: \(counts) No names. Photos are left out unless they are included."
-                 : "This report will contain: \(counts) No names. Photos are left out unless you include them.")
+                 : "This report will contain: \(counts) No names.")
                 .font(.body)
                 .foregroundStyle(Theme.Colors.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -220,10 +219,16 @@ struct ExportView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text("3  Prepare and share")
-                .font(.body)
-                .foregroundStyle(Theme.Colors.ink)
-                .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
+            // Step 3 holds its own action, in the scroll content beside the switch that
+            // unblocks it, rather than in a bar pinned far below.
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                Text("3  Prepare and share")
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                prepareAction
+            }
         }
     }
 
@@ -254,12 +259,16 @@ struct ExportView: View {
         }
     }
 
-    private var bottomBar: some View {
-        let blocked = !settings.exportPrivacyAcknowledged || isWorking
-        return VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            if !settings.exportPrivacyAcknowledged {
+    /// The one primary action. While it cannot run it is drawn as a legible outline (with a
+    /// lock until step 1 is confirmed), never as a faded fill.
+    @ViewBuilder
+    private var prepareAction: some View {
+        let acknowledged = settings.exportPrivacyAcknowledged
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            if !acknowledged {
                 Label {
                     Text("Confirm step 1 first")
+                        .fixedSize(horizontal: false, vertical: true)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle")
                         .accessibilityHidden(true)
@@ -268,13 +277,15 @@ struct ExportView: View {
                 .foregroundStyle(Theme.Colors.caution)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button(isWorking ? "Preparing…" : "Prepare the files", action: prepare)
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(blocked)
+            if acknowledged && !isWorking {
+                Button("Prepare the files", action: prepare)
+                    .buttonStyle(PrimaryButtonStyle())
+            } else {
+                Button(isWorking ? "Preparing…" : "Prepare the files", action: prepare)
+                    .buttonStyle(BlockedPrimaryButtonStyle(showsLock: !acknowledged))
+                    .disabled(true)
+            }
         }
-        .padding(.horizontal, Theme.Spacing.margin)
-        .padding(.vertical, Theme.Spacing.m)
-        .background(Theme.Colors.tray)
     }
 
     // MARK: - Preparing the files
@@ -329,5 +340,30 @@ struct ExportView: View {
             }
             isWorking = false
         }
+    }
+}
+
+/// The primary action while it cannot run: the same 64pt shape with a clear fill, a 1.5pt
+/// Graduation outline and a Graduation label, which stays legible on the tray in light and
+/// dark (a faded Drape fill does not). An optional lock says the action waits on a step.
+private struct BlockedPrimaryButtonStyle: ButtonStyle {
+    let showsLock: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: Theme.Spacing.s) {
+            if showsLock {
+                Image(systemName: "lock")
+                    .accessibilityHidden(true)
+            }
+            configuration.label
+        }
+        .font(.actionLabel)
+        .multilineTextAlignment(.center)
+        .foregroundStyle(Theme.Colors.graduation)
+        .padding(.horizontal, Theme.Spacing.m)
+        .frame(maxWidth: .infinity, minHeight: Theme.primaryHeight)
+        .background(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+            .strokeBorder(Theme.Colors.graduation, lineWidth: 1.5))
+        .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
     }
 }

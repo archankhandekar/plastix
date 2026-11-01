@@ -5,6 +5,8 @@ import UIKit
 /// the screen-left "Patient right" column, flipped by default so both sides face the same
 /// way; the left oblique sits in the screen-right column as taken. Descriptive only: nothing
 /// is measured and no number appears. The flipped image is for display and never saved.
+/// Practice photos are marked by the screen's one pinned band and a hatched rule on each
+/// plate; this view adds no second banner.
 struct ObliquePairView: View {
     private let rightOblique: UIImage?
     private let leftOblique: UIImage?
@@ -38,8 +40,15 @@ struct ObliquePairView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+            // The view controls come first, so they are found before the photos. The photo
+            // captions already say whether the right oblique is flipped.
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-                // Switch side shows one photo at a time and names it in its own caption.
+                SegmentedChoice(modeOptions, selection: $mode)
+                ToggleChip("Flip", isOn: $flip)
+            }
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                // Switch side shows one photo at a time and names its side on the photo.
                 if mode != .switchSide {
                     SideLabels()
                 }
@@ -50,18 +59,6 @@ struct ObliquePairView: View {
                            wipeFraction: $wipeFraction,
                            showingPatientRight: $showingPatientRight,
                            practice: practice)
-            }
-
-            if flip {
-                Text(ReadingCopy.obliquesCaption)
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-                SegmentedChoice(modeOptions, selection: $mode)
-                ToggleChip("Flip", isOn: $flip)
             }
 
             Text(ReadingCopy.obliquesNote)

@@ -40,6 +40,17 @@ struct MirrorPair: View {
     /// Obliques are portrait; both columns share this shape so the photos sit at the same height.
     private let photoAspect: CGFloat = 3.0 / 4.0
 
+    /// A single full-width plate (wipe, switch side) is capped so the photo and its controls
+    /// fit on one screen at the default text size; side by side is already half as tall.
+    private let singlePlateMaxHeight: CGFloat = 380
+
+    /// The practice cue on the photos is a 6pt hatched rule along each plate's top edge, with
+    /// no text: the screen already pins one practice band, so the plate never repeats it.
+    private let practiceRuleHeight: CGFloat = 6
+
+    /// Narrower than this, a wipe chip is hidden rather than squeezed into a column of letters.
+    private let minChipWidth: CGFloat = 64
+
     private var rightCaption: String {
         flipPatientRight ? "Right oblique, flipped" : "Right oblique, as taken"
     }
@@ -48,16 +59,10 @@ struct MirrorPair: View {
     private let leftMissing = "Not taken: left oblique."
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            if practice {
-                PracticeBand(PracticeBand.photoText, style: .plate)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
-            }
-            switch mode {
-            case .sideBySide: sideBySide
-            case .wipe: wipe
-            case .switchSide: switchSide
-            }
+        switch mode {
+        case .sideBySide: sideBySide
+        case .wipe: wipe
+        case .switchSide: switchSide
         }
     }
 
@@ -84,6 +89,9 @@ struct MirrorPair: View {
             GeometryReader { proxy in
                 let width = proxy.size.width
                 let dividerX = width * clamped(wipeFraction)
+                let inset = Theme.Spacing.s
+                let rightRoom = dividerX - 2 * inset
+                let leftRoom = width - dividerX - 2 * inset
                 ZStack(alignment: .topLeading) {
                     Theme.Colors.plate
                     image(patientLeftImage, flipped: false, missing: leftMissing)
@@ -91,29 +99,40 @@ struct MirrorPair: View {
                         .mask(alignment: .leading) {
                             Rectangle().frame(width: dividerX)
                         }
-                    HStack(alignment: .top) {
+                    // Each chip stays inside its own half, and is hidden when the divider leaves
+                    // its half too narrow to hold it, so no chip ever crosses the divider.
+                    if rightRoom >= minChipWidth {
                         plateCaption(rightCaption)
-                        Spacer(minLength: Theme.Spacing.s)
-                        plateCaption(leftCaption)
+                            .frame(maxWidth: rightRoom, alignment: .leading)
+                            .offset(x: inset, y: topInset)
                     }
-                    .padding(Theme.Spacing.s)
+                    if leftRoom >= minChipWidth {
+                        plateCaption(leftCaption)
+                            .frame(maxWidth: leftRoom, alignment: .trailing)
+                            .frame(width: width - dividerX - inset, alignment: .trailing)
+                            .offset(x: dividerX, y: topInset)
+                    }
                     Rectangle()
                         .fill(Theme.Colors.drapeOnPlate)
                         .frame(width: 2, height: proxy.size.height)
                         .offset(x: dividerX - 1)
                         .accessibilityHidden(true)
+                    // The grip sits low on the plate, over the drape, so only the thin rule
+                    // crosses the anatomy being compared.
                     grip
                         .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("wipe"))
                             .onChanged { value in
                                 guard width > 0 else { return }
                                 wipeFraction = clamped(value.location.x / width)
                             })
-                        .position(x: dividerX, y: proxy.size.height / 2)
+                        .position(x: dividerX, y: proxy.size.height - Theme.tapTarget / 2 - Theme.Spacing.s)
                 }
                 .coordinateSpace(name: "wipe")
             }
             .aspectRatio(photoAspect, contentMode: .fit)
+            .overlay(alignment: .top) { practiceRule }
             .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
+            .frame(maxWidth: .infinity, maxHeight: singlePlateMaxHeight)
 
             HStack(spacing: Theme.Spacing.s) {
                 Button("Move the divider left") { step(-Self.wipeStep) }
@@ -150,6 +169,11 @@ struct MirrorPair: View {
             }
     }
 
+    /// Chips start below the practice rule when there is one.
+    private var topInset: CGFloat {
+        Theme.Spacing.s + (practice ? practiceRuleHeight : 0)
+    }
+
     private func step(_ delta: CGFloat) {
         // Round to the step grid so repeated taps land on 0.1, 0.2, ... exactly.
         let next = ((wipeFraction + delta) * 10).rounded() / 10
@@ -164,15 +188,22 @@ struct MirrorPair: View {
 
     private var switchSide: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            if showingPatientRight {
-                photo(patientRightImage, flipped: flipPatientRight, missing: rightMissing)
-            } else {
-                photo(patientLeftImage, flipped: false, missing: leftMissing)
+            // The side shown is named on the photo itself, so it is always in view with it.
+            Group {
+                if showingPatientRight {
+                    photo(patientRightImage, flipped: flipPatientRight, missing: rightMissing)
+                } else {
+                    photo(patientLeftImage, flipped: false, missing: leftMissing)
+                }
             }
-            Text(showingCaption)
-                .font(.body)
-                .foregroundStyle(Theme.Colors.ink)
-                .fixedSize(horizontal: false, vertical: true)
+            .overlay(alignment: .topLeading) {
+                plateCaption(showingCaption)
+                    .padding(.horizontal, Theme.Spacing.s)
+                    .padding(.top, topInset)
+            }
+            .frame(maxWidth: .infinity, maxHeight: singlePlateMaxHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(showingCaption)
             Button("Show the other side") { showingPatientRight.toggle() }
                 .buttonStyle(SecondaryButtonStyle())
         }
@@ -181,10 +212,10 @@ struct MirrorPair: View {
     private var showingCaption: String {
         if showingPatientRight {
             return flipPatientRight
-                ? "Showing: patient right, right oblique flipped"
-                : "Showing: patient right, right oblique as taken"
+                ? "Patient right, right oblique flipped"
+                : "Patient right, right oblique as taken"
         }
-        return "Showing: patient left, left oblique"
+        return "Patient left, left oblique"
     }
 
     // MARK: Pieces
@@ -194,6 +225,7 @@ struct MirrorPair: View {
             .aspectRatio(photoAspect, contentMode: .fit)
             .overlay { image(uiImage, flipped: flipped, missing: missing) }
             .background(Theme.Colors.plate)
+            .overlay(alignment: .top) { practiceRule }
             .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
     }
 
@@ -217,6 +249,23 @@ struct MirrorPair: View {
         }
     }
 
+    /// Practice photos carry a thin hatched rule along the top edge and no text: the hatch is
+    /// the practice marker, and the screen's pinned band carries the words.
+    @ViewBuilder
+    private var practiceRule: some View {
+        if practice {
+            ZStack {
+                Theme.Colors.plate
+                HatchPattern(spacing: 4)
+                    .stroke(Theme.Colors.plateGraduation, lineWidth: 1)
+            }
+            .frame(height: practiceRuleHeight)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .accessibilityHidden(true)
+        }
+    }
+
     private func caption(_ text: String) -> some View {
         Text(text)
             .font(.support)
@@ -228,6 +277,8 @@ struct MirrorPair: View {
         Text(text)
             .font(.support)
             .foregroundStyle(Theme.Colors.plateInk)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, Theme.Spacing.xs)
             .background(Theme.Colors.plate.opacity(0.7), in: RoundedRectangle(cornerRadius: 2))
     }
