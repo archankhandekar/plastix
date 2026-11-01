@@ -58,15 +58,24 @@ struct DesignGallery: View {
             ("Drape on plate", Theme.Colors.drapeOnPlate), ("Caution on plate", Theme.Colors.cautionOnPlate),
             ("Caliper", Theme.Colors.caliper),
         ]
-        return VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            WrapLayout(spacing: Theme.Spacing.s) {
-                ForEach(tray.indices, id: \.self) { i in swatch(tray[i].0, tray[i].1) }
-            }
-            WrapLayout(spacing: Theme.Spacing.s) {
-                ForEach(plate.indices, id: \.self) { i in swatch(plate[i].0, plate[i].1) }
-            }
+        return VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text("Tray").font(.body.weight(.semibold))
+            swatchGrid(tray)
+            Text("Plate").font(.body.weight(.semibold))
+            swatchGrid(plate)
             Text(MetricGlossary.provenanceLine).font(.body)
             Text(MetricGlossary.sidesLine).font(.body)
+        }
+    }
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// A fixed grid: two columns, or one at accessibility sizes, so rows never wrap raggedly.
+    private func swatchGrid(_ items: [(String, Color)]) -> some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.s, alignment: .leading),
+                            count: dynamicTypeSize.isAccessibilitySize ? 1 : 2)
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: Theme.Spacing.xs) {
+            ForEach(items.indices, id: \.self) { i in swatch(items[i].0, items[i].1) }
         }
     }
 
@@ -76,9 +85,11 @@ struct DesignGallery: View {
                 .fill(color)
                 .overlay(RoundedRectangle(cornerRadius: Theme.photoRadius).strokeBorder(Theme.Colors.graduation, lineWidth: 1))
                 .frame(width: 32, height: 32)
-            Text(name).font(.support)
+            Text(name)
+                .font(.support)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(minHeight: Theme.tapTarget)
+        .frame(maxWidth: .infinity, minHeight: Theme.tapTarget, alignment: .leading)
     }
 
     private var type: some View {
@@ -179,6 +190,28 @@ struct DesignGallery: View {
             Text("Photo turned so the midline runs straight down.").font(.support)
             PlumbPhoto(image: Samples.frontalImage, landmarks: nil)
             Text("Without a notch and midline bottom the photo is shown as taken.").font(.support)
+            renderSpecimens
+        }
+    }
+
+    /// The inks on the real render (backdrop, skin and drape) at each layer strength.
+    private var renderSpecimens: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text("On the virtual patient").font(.body.weight(.semibold))
+            if let specimen = Samples.renderSpecimen {
+                ForEach([1.0, PlateLayout.allOpacity, PlateLayout.dimmedOpacity], id: \.self) { strength in
+                    PlumbPhoto(image: specimen.image, landmarks: specimen.landmarks, animatesTurn: false,
+                               practice: true, caution: strength == PlateLayout.dimmedOpacity ? "Blurred photo, kept" : nil,
+                               framing: .wide) { geometry in
+                        Canvas { ctx, _ in
+                            Samples.drawSpecimen(in: ctx, geometry: geometry, truth: specimen.landmarks, strength: strength)
+                        }
+                    }
+                    Text("Layer strength \(String(format: "%.2f", strength)). Labels stay at full strength.").font(.support)
+                }
+            } else {
+                Text("The virtual patient render is not bundled.").font(.support)
+            }
         }
     }
 
@@ -338,13 +371,51 @@ private enum Samples {
         }
     }
 
+    /// The bundled stage 1 frontal render with its ground truth, or nil when not bundled.
+    static let renderSpecimen: (image: UIImage, landmarks: LandmarkSet)? = {
+        guard let patient = DemoPatient.loadBundled(),
+              let view = patient.view(stage: 1, angle: .frontal),
+              let truth = patient.truth(stage: 1, angle: .frontal),
+              let data = DemoPatient.imageData(named: view.image),
+              let image = UIImage(data: data) else { return nil }
+        return (image, truth)
+    }()
+
+    /// One guide pair, one bracket, one caliper, one label and both outlines on the real
+    /// render, every line at `strength` and the label at full strength.
+    static func drawSpecimen(in ctx: GraphicsContext, geometry g: PlateGeometry, truth: LandmarkSet, strength: Double) {
+        guard let ln = truth[.leftNipple], let rn = truth[.rightNipple] else { return }
+        let l = g.viewPoint(pixel: ln), r = g.viewPoint(pixel: rn)
+        PlateInk.axisRuler(in: ctx, geometry: g, showsLabels: true, avoiding: [l.y, r.y])
+        for type in [LandmarkType.sternalNotch, .midlineBottom] {
+            if let p = truth[type] { PlateInk.midlinePoint(in: ctx, at: g.viewPoint(pixel: p)) }
+        }
+        let w = g.size.width
+        PlateInk.outline(in: ctx, points: truth.leftContour.map(g.viewPoint(pixel:)), color: Theme.Colors.markerOnPlate,
+                         dashed: false, opacity: strength)
+        PlateInk.outline(in: ctx, points: truth.rightContour.map(g.mirroredViewPoint(pixel:)), color: Theme.Colors.drapeOnPlate,
+                         dashed: true, opacity: strength)
+        PlateInk.guide(in: ctx, from: CGPoint(x: 0, y: r.y), to: CGPoint(x: w, y: r.y), dashed: true, opacity: strength)
+        PlateInk.guide(in: ctx, from: CGPoint(x: 0, y: l.y), to: CGPoint(x: w, y: l.y), opacity: strength)
+        PlateInk.bracket(in: ctx, from: CGPoint(x: g.axisX, y: r.y), to: r, opacity: strength)
+        let x = w - 40
+        PlateInk.caliperVertical(in: ctx, x: x, y1: r.y, y2: l.y, whiskerY: l.y,
+                                 whiskerHalf: g.uncertaintyPoints(positive.uncertainty), opacity: strength)
+        PlateInk.nipple(in: ctx, at: l)
+        PlateInk.nipple(in: ctx, at: r)
+        let lines = PlateLayout.readoutLines(MetricFormatter.text(positive)) + ["Left lower"]
+        let s = PlateInk.labelSize(in: ctx, lines: lines)
+        PlateInk.label(in: ctx, lines: lines, in: CGRect(x: w - 4 - s.width, y: min(r.y, l.y) - 10 - s.height,
+                                                         width: s.width, height: s.height))
+    }
+
     /// A sample of every plate construction, drawn with PlateInk.
     static func drawConstructions(in ctx: GraphicsContext, geometry g: PlateGeometry) {
-        PlateInk.axisRuler(in: ctx, geometry: g, showsLabels: true)
         guard let ln = landmarks[.leftNipple], let rn = landmarks[.rightNipple],
               let lf = landmarks[.leftIMF], let rf = landmarks[.rightIMF],
               let notch = landmarks[.sternalNotch], let bottom = landmarks[.midlineBottom] else { return }
         let l = g.viewPoint(pixel: ln), r = g.viewPoint(pixel: rn)
+        PlateInk.axisRuler(in: ctx, geometry: g, showsLabels: true, avoiding: [l.y, r.y])
         let w = g.size.width
 
         // Nipple height guides and caliper.
@@ -365,17 +436,17 @@ private enum Samples {
         // Outlines: left solid violet, right mirrored dashed blue, with overlap fills.
         let left = landmarks.leftContour.map(g.viewPoint(pixel:))
         let mirrored = landmarks.rightContour.map(g.mirroredViewPoint(pixel:))
-        let leftPath = PlateInk.closedPath(left), mirroredPath = PlateInk.closedPath(mirrored)
+        let leftPath = PlateInk.smoothClosedPath(left), mirroredPath = PlateInk.smoothClosedPath(mirrored)
         var both = ctx
         both.clip(to: leftPath)
         both.clip(to: mirroredPath)
-        both.fill(Path(CGRect(origin: .zero, size: g.size)), with: .color(Theme.Colors.drapeOnPlate.opacity(0.22)))
+        both.fill(Path(CGRect(origin: .zero, size: g.size)), with: .color(Theme.Colors.drapeOnPlate.opacity(0.08)))
         var leftOnly = ctx
         leftOnly.clip(to: mirroredPath, options: .inverse)
-        PlateInk.hatch(in: leftOnly, path: leftPath, color: Theme.Colors.markerOnPlate.opacity(0.25))
+        PlateInk.hatch(in: leftOnly, path: leftPath, color: Theme.Colors.markerOnPlate.opacity(0.5))
         var mirroredOnly = ctx
         mirroredOnly.clip(to: leftPath, options: .inverse)
-        PlateInk.hatch(in: mirroredOnly, path: mirroredPath, color: Theme.Colors.drapeOnPlate.opacity(0.25))
+        PlateInk.hatch(in: mirroredOnly, path: mirroredPath, color: Theme.Colors.drapeOnPlate.opacity(0.5))
         PlateInk.outline(in: ctx, points: left, color: Theme.Colors.markerOnPlate, dashed: false)
         PlateInk.outline(in: ctx, points: mirrored, color: Theme.Colors.drapeOnPlate, dashed: true)
         PlateInk.outline(in: ctx, points: landmarks.rightContour.map(g.viewPoint(pixel:)),
