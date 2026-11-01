@@ -522,6 +522,17 @@ struct LandmarkCanvas: View {
                 .accessibilityHidden(true)
                 if let center = pulseCenter(fit: fit) {
                     PulseRing(center: center, isStatic: staticMotion || reduceMotion)
+                    #if DEBUG
+                    // UI tests only: a tiny element at the pulse, so a test can tap where the
+                    // next point goes. Not hit-testable, so the tap reaches the canvas.
+                    Color.clear
+                        .frame(width: 4, height: 4)
+                        .position(center)
+                        .allowsHitTesting(false)
+                        .accessibilityElement()
+                        .accessibilityLabel(selectedType.map(LandmarkHints.chipLabel) ?? "")
+                        .accessibilityIdentifier("markPoints.nextPoint")
+                    #endif
                 }
                 if let finger = fingerView {
                     Loupe(image: image, fit: fit, center: finger)

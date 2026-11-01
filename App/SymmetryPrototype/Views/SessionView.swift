@@ -17,7 +17,8 @@ struct SessionView: View {
 
     @State private var confirmDelete = false
     @State private var confirmReset = false
-    @State private var showingNewSet = false
+    /// Non-nil while the New photo set sheet is up. The sheet is presented from this item, so
+    /// it always opens with the context that was set together with it.
     @State private var newSetContext: NewSetContext?
     @State private var pendingSet: CaptureSet?
     @State private var captureTarget: CaptureTarget?
@@ -26,7 +27,8 @@ struct SessionView: View {
     @State private var flagsRevision = 0
 
     /// What the New photo set sheet is pre-filled with.
-    struct NewSetContext {
+    struct NewSetContext: Identifiable {
+        let id = UUID()
         let suggestedStage: OperativeStage
         let previousStage: OperativeStage?
         let previousPositioning: Positioning?
@@ -139,24 +141,20 @@ struct SessionView: View {
             performNextIfRequested()
         }
         .onChange(of: navigator.performNextOnHome) { performNextIfRequested() }
-        .sheet(isPresented: $showingNewSet, onDismiss: {
+        .sheet(item: $newSetContext, onDismiss: {
             // Present the camera only after the sheet has fully dismissed.
             if let set = pendingSet {
                 pendingSet = nil
                 let index = (store.session(id: sessionID)?.orderedCaptureSets.count ?? 0) + 1
                 captureTarget = CaptureTarget(set: set, index: index, angles: ViewAngle.allCases)
             }
-        }) {
-            let context = newSetContext ?? NewSetContext(suggestedStage: OperativeStage.presets[0],
-                                                         previousStage: nil,
-                                                         previousPositioning: nil,
-                                                         previousSetIndex: nil)
+        }) { context in
             NewCaptureSetView(suggestedStage: context.suggestedStage,
                               previousPositioning: context.previousPositioning,
                               previousSetIndex: context.previousSetIndex,
                               previousStage: context.previousStage) { set in
                 pendingSet = set
-                showingNewSet = false
+                newSetContext = nil
             }
             .sessionScope(kind)
             // Explicit, so the sheet never depends on environment inheritance; stores sits
@@ -351,7 +349,6 @@ struct SessionView: View {
                                           previousStage: previous?.stage,
                                           previousPositioning: previousPositioning,
                                           previousSetIndex: previousSetIndex)
-            showingNewSet = true
         case .captureMissing(let set, let index, let angles, _, _):
             captureTarget = CaptureTarget(set: set, index: index, angles: angles)
         default:
@@ -365,7 +362,6 @@ struct SessionView: View {
                                       previousStage: last?.stage,
                                       previousPositioning: last?.positioning,
                                       previousSetIndex: last == nil ? nil : index)
-        showingNewSet = true
     }
 
     /// A tapped step performs that step's action. The rail only wires taps for actionable

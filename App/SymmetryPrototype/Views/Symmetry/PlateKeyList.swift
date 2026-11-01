@@ -95,5 +95,6 @@ struct PlateKeyList: View {
         .accessibilityLabel("\(metric.title), \(r.readout)")
         .accessibilityHint(isSelected ? "Shows every layer on the photo." : "Brings this difference forward on the photo.")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+        .accessibilityIdentifier("plateKey.\(metric)")
     }
 }

@@ -63,6 +63,29 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.research.symmetry.SymmetryPrototypeTests
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
+  # UI tests: the virtual patient walkthrough, driven by taps on the real navigation flow.
+  # Slow (several minutes), so it has its own scheme and is not run by CI or by the
+  # SymmetryPrototype scheme's test action.
+  SymmetryPrototypeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: App/SymmetryPrototypeUITests
+    dependencies:
+      - target: SymmetryPrototype
+    configFiles:
+      Debug: Config/Local.xcconfig
+      Release: Config/Local.xcconfig
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.research.symmetry.SymmetryPrototypeUITests
+        TEST_TARGET_NAME: SymmetryPrototype
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
 schemes:
   SymmetryPrototype:
     build:
@@ -77,3 +100,15 @@ schemes:
         - SymmetryPrototypeTests
     archive:
       config: Release
+  # Run with: xcodebuild test -scheme SymmetryPrototypeUITests -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+  SymmetryPrototypeUITests:
+    build:
+      targets:
+        SymmetryPrototype: all
+        SymmetryPrototypeUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SymmetryPrototypeUITests

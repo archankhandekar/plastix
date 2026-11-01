@@ -21,6 +21,8 @@ struct SymmetryPrototypeApp: App {
             return
         }
         harness = nil
+        // -UITestReset 1: a normal launch that starts clean, for the UI tests.
+        UITestReset.performIfRequested()
         #endif
         _settings = StateObject(wrappedValue: AppSettings())
         _navigator = StateObject(wrappedValue: AppNavigator())

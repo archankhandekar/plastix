@@ -36,6 +36,7 @@ struct NextActionBar: View {
             Button(title, action: action)
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityShowsLargeContentViewer()
+                .accessibilityIdentifier("nextAction.primary")
             if let secondaryTitle, let secondaryAction {
                 Button(secondaryTitle, action: secondaryAction)
                     .buttonStyle(SecondaryButtonStyle())
