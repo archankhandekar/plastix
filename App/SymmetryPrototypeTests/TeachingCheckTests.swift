@@ -135,6 +135,25 @@ final class TeachingCheckTests: XCTestCase {
         XCTAssertEqual(TeachingCheck.scaled(t, to: t.imageSize), t)
     }
 
+    // MARK: - Targets on the canvas
+
+    /// The drawn ring is the true check radius (so "inside its ring" means what it shows),
+    /// mapped through the fit rect, never below the minimum; ticks sit outside it.
+    func testTargetsMapThroughTheFitAndKeepTheCheckRadius() throws {
+        let fit = CGRect(x: 10, y: 20, width: 300, height: 400) // 1200 x 1600 pixels at 0.25
+        let targets = TeachingRings.targets(truth: truth(), radiusPixels: 18 * 4, pixelSize: CGSize(width: 1200, height: 1600), fit: fit)
+        XCTAssertEqual(targets.map(\.type), LandmarkType.allCases)
+        let notch = try XCTUnwrap(targets.first { $0.type == .sternalNotch })
+        XCTAssertEqual(notch.center.x, 10 + 600 * 0.25, accuracy: 1e-9)
+        XCTAssertEqual(notch.center.y, 20 + 400 * 0.25, accuracy: 1e-9)
+        // Ring 18pt plus a 3pt gap and 6pt ticks.
+        XCTAssertEqual(notch.outerRadius, 18 + 9, accuracy: 1e-9)
+
+        let tiny = TeachingRings.targets(truth: truth(), radiusPixels: 1, pixelSize: CGSize(width: 1200, height: 1600), fit: fit)
+        XCTAssertEqual(try XCTUnwrap(tiny.first).outerRadius, TeachingRings.minimumRingRadius + 9, accuracy: 1e-9)
+        XCTAssertTrue(TeachingRings.targets(truth: truth(), radiusPixels: 18, pixelSize: .zero, fit: fit).isEmpty)
+    }
+
     // MARK: - Copy
 
     func testNoLineCountsOrGrades() {

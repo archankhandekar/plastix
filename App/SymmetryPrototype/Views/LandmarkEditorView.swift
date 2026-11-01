@@ -17,6 +17,7 @@ struct LandmarkEditorView: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.sessionKind) private var kind
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let sessionID: UUID
     let setID: UUID
     let captureID: UUID
@@ -39,6 +40,8 @@ struct LandmarkEditorView: View {
     @State private var showRings: Bool
     /// Practice only: the per-point check lines are on screen.
     @State private var checkShown = false
+    /// The size of the teaching switch in the canvas corner, so canvas labels keep clear of it.
+    @State private var ringsButtonSize: CGSize = .zero
 
     init(sessionID: UUID, setID: UUID, captureID: UUID, showTruth: Bool = false) {
         self.sessionID = sessionID
@@ -81,16 +84,34 @@ struct LandmarkEditorView: View {
             if let session, let capture, let image = store.image(for: capture, in: session) {
                 let rings = teaching
                 GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        canvas(image: image, capture: capture, rings: rings)
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 320)
-                            .frame(height: max(320, geo.size.height * 0.55))
-                            .layoutPriority(1)
+                    if dynamicTypeSize.isAccessibilitySize {
+                        // One scroll, so nothing is clipped: the photo keeps 45 percent of the
+                        // height and the instruction, chips and teaching aid follow it.
                         ScrollView {
-                            lowerPanel(capture: capture, rings: rings)
-                                .padding(.horizontal, Theme.Spacing.margin)
-                                .padding(.vertical, Theme.Spacing.m)
+                            VStack(spacing: 0) {
+                                canvas(image: image, capture: capture, rings: rings)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: max(260, geo.size.height * 0.45))
+                                lowerPanel(capture: capture, rings: rings)
+                                    .padding(.horizontal, Theme.Spacing.margin)
+                                    .padding(.vertical, Theme.Spacing.m)
+                            }
+                        }
+                    } else {
+                        VStack(spacing: 0) {
+                            VStack(spacing: 0) {
+                                canvas(image: image, capture: capture, rings: rings)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                instructionStrip
+                            }
+                            .frame(height: max(300, geo.size.height * 0.56))
+                            ScrollView {
+                                lowerPanel(capture: capture, rings: rings)
+                                    .padding(.horizontal, Theme.Spacing.margin)
+                                    .padding(.top, Theme.Spacing.m)
+                                    .padding(.bottom, Theme.Spacing.l)
+                            }
+                            .overlay(alignment: .bottom) { scrollFade }
                         }
                     }
                 }
@@ -173,9 +194,80 @@ struct LandmarkEditorView: View {
                        landmarks: Binding(get: { landmarks ?? LandmarkSet(imageSize: capture.imageSize) },
                                           set: { landmarks = $0 }),
                        mode: mode,
-                       rings: showRings ? rings : nil) { placed in advance(after: placed) }
+                       rings: showRings ? rings : nil,
+                       keepOutBottomTrailing: rings != nil ? ringsButtonSize : .zero) { placed in advance(after: placed) }
             .background(Theme.Colors.plate)
+            .overlay(alignment: .bottomTrailing) {
+                if rings != nil {
+                    ringsButton
+                        .background {
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onAppear { ringsButtonSize = geo.size }
+                                    .onChange(of: geo.size) { _, size in ringsButtonSize = size }
+                            }
+                        }
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius))
+    }
+
+    /// Practice only: the teaching aid's switch, in the canvas's bottom corner (over the drape,
+    /// clear of the notch) so a new user sees it at once. Its text is capped at xxLarge so it
+    /// never grows over the photo.
+    private var ringsButton: some View {
+        Button { showRings.toggle() } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: showRings ? "eye.slash" : "scope")
+                    .accessibilityHidden(true)
+                Text(showRings ? "Hide where the points go" : TeachingCheck.showRingsTitle)
+                    .lineLimit(1)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.Colors.plateInk)
+            .padding(.horizontal, Theme.Spacing.s)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Colors.plate.opacity(0.85), in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius)
+                .strokeBorder(showRings ? Theme.Colors.plateInk : Theme.Colors.plateGraduation, lineWidth: showRings ? 1.5 : 1))
+            .padding(Theme.Spacing.xs)
+            .frame(minHeight: Theme.tapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+        .accessibilityLabel(TeachingCheck.showRingsTitle)
+        .accessibilityValue(showRings ? "On" : "Off")
+        .accessibilityAddTraits(showRings ? [.isSelected] : [])
+    }
+
+    /// The one-line "Next: ..." instruction on a Plate strip along the photo's bottom edge,
+    /// so the chip map starts right under the photo.
+    private var instructionStrip: some View {
+        instruction
+            .font(.body)
+            .foregroundStyle(Theme.Colors.plateInk)
+            .lineLimit(3)
+            .padding(.horizontal, Theme.Spacing.margin)
+            .padding(.vertical, Theme.Spacing.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Colors.plate)
+    }
+
+    private var instruction: some View {
+        Text(LandmarkHints.banner(for: mode, landmarks: landmarks))
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// Fades the bottom of the lower panel into the tray, so a cut row reads as "more below".
+    private var scrollFade: some View {
+        LinearGradient(colors: [Theme.Colors.tray.opacity(0), Theme.Colors.tray],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: 28)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     // MARK: - Lower panel
@@ -183,16 +275,19 @@ struct LandmarkEditorView: View {
     @ViewBuilder
     private func lowerPanel(capture: Capture, rings: LandmarkCanvas.Rings?) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.l) {
-            Text(LandmarkHints.banner(for: mode, landmarks: landmarks))
-                .font(.body)
-                .foregroundStyle(Theme.Colors.ink)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.updatesFrequently)
+            if dynamicTypeSize.isAccessibilitySize {
+                instruction
+                    .font(.body)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             ChipMap(landmarks: landmarks, selected: selectedPoint) { type in
                 mode = .point(type)
+            }
+
+            if let rings {
+                teachingControls(rings)
             }
 
             SegmentedChoice([(value: Segment.points, title: LandmarkHints.pointsChip),
@@ -208,10 +303,6 @@ struct LandmarkEditorView: View {
                     .font(.support)
                     .foregroundStyle(Theme.Colors.graduation)
                     .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if let rings {
-                teachingControls(rings)
             }
 
             metricsPreview(capture: capture)
@@ -239,8 +330,7 @@ struct LandmarkEditorView: View {
     /// Practice photos only (the caller passes rings only through the structural gate).
     private func teachingControls(_ rings: LandmarkCanvas.Rings) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            ToggleChip(TeachingCheck.showRingsTitle, isOn: $showRings)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // The switch itself is in the photo's corner; the caption explains it here.
             if showRings {
                 Text(TeachingCheck.caption)
                     .font(.support)
@@ -249,7 +339,6 @@ struct LandmarkEditorView: View {
             }
             Button(TeachingCheck.checkTitle) { checkShown = true }
                 .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, Theme.Spacing.s)
             if checkShown {
                 // A flat list of whole sentences: never a count, a tally or a grade.
                 VStack(alignment: .leading, spacing: Theme.Spacing.s) {
@@ -404,10 +493,13 @@ struct LandmarkCanvas: View {
     @Binding var landmarks: LandmarkSet
     let mode: LandmarkEditorView.Mode
     var rings: Rings? = nil
+    /// A control sits in the canvas's bottom-trailing corner at this size; labels avoid it.
+    var keepOutBottomTrailing: CGSize = .zero
     let onPlaced: (LandmarkEditorView.Mode) -> Void
 
     @Environment(\.staticMotion) private var staticMotion
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var dragging: LandmarkType?
     @State private var dragMoved = false
@@ -423,12 +515,8 @@ struct LandmarkCanvas: View {
                 Image(uiImage: image).resizable().scaledToFit()
                     .frame(width: geo.size.width, height: geo.size.height)
                     .accessibilityLabel("Photo for marking points")
-                if let rings {
-                    TeachingRings(truth: rings.truth, radiusPixels: rings.radiusPixels,
-                                  pixelSize: image.size, fit: fit)
-                }
-                Canvas { ctx, _ in
-                    draw(ctx, fit: fit)
+                Canvas { ctx, size in
+                    draw(ctx, fit: fit, size: size)
                 }
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -529,10 +617,27 @@ struct LandmarkCanvas: View {
     // MARK: - Drawing
 
     /// Violet is what a hand placed (points and both outlines, with a Plate halo); the dashed
-    /// midline between the notch and the midline bottom is derived, so it is Drape blue.
-    private func draw(_ ctx: GraphicsContext, fit: CGRect) {
-        for (contour, title) in [(landmarks.leftContour, LandmarkHints.leftOutlineChip),
-                                 (landmarks.rightContour, LandmarkHints.rightOutlineChip)] where contour.count > 1 {
+    /// midline between the notch and the midline bottom is derived, so it is Drape blue. The
+    /// teaching targets, when shown, are Plate ink. Labels go last, in one collision-checked
+    /// pass, so no label covers a mark or another label.
+    private func draw(_ ctx: GraphicsContext, fit: CGRect, size: CGSize) {
+        var obstacles: [CGRect] = []
+        if keepOutBottomTrailing.width > 0, keepOutBottomTrailing.height > 0 {
+            obstacles.append(CGRect(x: size.width - keepOutBottomTrailing.width, y: size.height - keepOutBottomTrailing.height,
+                                    width: keepOutBottomTrailing.width, height: keepOutBottomTrailing.height))
+        }
+        var contourAnchors: [(title: String, anchor: CGPoint, direction: CanvasLabelPlacer.Direction, isSelected: Bool)] = []
+
+        let targets = rings.map {
+            TeachingRings.draw(in: ctx, truth: $0.truth, radiusPixels: $0.radiusPixels, pixelSize: image.size, fit: fit)
+        } ?? []
+        for t in targets {
+            let r = t.outerRadius
+            obstacles.append(CGRect(x: t.center.x - r, y: t.center.y - r, width: 2 * r, height: 2 * r))
+        }
+
+        for (contour, title, isLeft) in [(landmarks.leftContour, LandmarkHints.leftOutlineChip, true),
+                                         (landmarks.rightContour, LandmarkHints.rightOutlineChip, false)] where contour.count > 1 {
             let points = contour.map { toView($0, fit: fit) }
             var path = Path()
             path.move(to: points[0])
@@ -541,16 +646,23 @@ struct LandmarkCanvas: View {
                        style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
             ctx.stroke(path, with: .color(Theme.Colors.markerOnPlate),
                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-            if let top = points.min(by: { $0.y < $1.y }) {
-                label(ctx, title, near: top, gap: 6, fit: fit)
+            obstacles += CanvasLabelPlacer.obstacles(along: points, halfWidth: 3)
+            // Anchored at the outermost side point, away from the nipple and the midline:
+            // the patient's left outline is on the screen's right.
+            let outer = isLeft ? points.max { $0.x < $1.x } : points.min { $0.x < $1.x }
+            if let outer {
+                let selected = isLeft ? mode == .leftContour : mode == .rightContour
+                contourAnchors.append((title, outer, isLeft ? .screenRight : .screenLeft, selected))
             }
         }
         if let n = landmarks[.sternalNotch], let b = landmarks[.midlineBottom] {
             var path = Path()
-            path.move(to: toView(n, fit: fit))
-            path.addLine(to: toView(b, fit: fit))
+            let a = toView(n, fit: fit), c = toView(b, fit: fit)
+            path.move(to: a)
+            path.addLine(to: c)
             ctx.stroke(path, with: .color(Theme.Colors.plate.opacity(0.6)), lineWidth: 4)
             ctx.stroke(path, with: .color(Theme.Colors.drapeOnPlate), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+            obstacles += CanvasLabelPlacer.obstacles(along: [a, c], halfWidth: 3)
         }
         for type in LandmarkType.allCases {
             guard let p = landmarks[type] else { continue }
@@ -560,27 +672,42 @@ struct LandmarkCanvas: View {
             case .leftIMF, .rightIMF: PlateInk.fold(in: ctx, at: v)
             case .sternalNotch, .midlineBottom: PlateInk.midlinePoint(in: ctx, at: v)
             }
-            label(ctx, LandmarkHints.chipLabel(type), near: v, gap: 12, fit: fit)
+            obstacles.append(CGRect(x: v.x - 11, y: v.y - 11, width: 22, height: 22))
+        }
+
+        // Which labels to draw. With the teaching targets on, the targets carry the names (one
+        // name per point, never two); otherwise the placed marks do. At accessibility text
+        // sizes only the selected point is labelled. The selected point goes first, so it
+        // gets the best spot and is never dropped.
+        let selected = selectedType
+        let onlySelected = dynamicTypeSize.isAccessibilitySize
+        var placer = CanvasLabelPlacer(bounds: CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2),
+                                       obstacles: obstacles)
+        // The side points first: they can only go outward. The midline points can go above,
+        // below or to either side, so they take what is left.
+        var order: [LandmarkType] = [.rightNipple, .leftNipple, .rightIMF, .leftIMF, .sternalNotch, .midlineBottom]
+        if let selected, let i = order.firstIndex(of: selected) { order.insert(order.remove(at: i), at: 0) }
+        for type in order {
+            let isSelected = type == selected
+            guard isSelected || !onlySelected else { continue }
+            if let t = targets.first(where: { $0.type == type }) {
+                placer.draw(LandmarkHints.chipLabel(type), at: t.center,
+                            direction: .forPoint(type), clearance: t.outerRadius + 2, force: isSelected, in: ctx)
+            } else if let p = landmarks[type] {
+                placer.draw(LandmarkHints.chipLabel(type), at: toView(p, fit: fit),
+                            direction: .forPoint(type), clearance: 13, force: isSelected, in: ctx)
+            }
+        }
+        for c in contourAnchors where c.isSelected || (!onlySelected && targets.isEmpty) {
+            placer.draw(c.title, at: c.anchor, direction: c.direction, clearance: 6, force: c.isSelected, in: ctx)
         }
     }
 
-    /// A Plate-backed label just above `point`, or just below it when there is no room above.
-    private func label(_ ctx: GraphicsContext, _ text: String, near point: CGPoint, gap: CGFloat, fit: CGRect) {
-        let resolved = ctx.resolve(Text(text).font(.subheadline).foregroundColor(Theme.Colors.plateInk))
-        let size = resolved.measure(in: CGSize(width: 240, height: 80))
-        let pad: CGFloat = 4
-        var centerY = point.y - gap - pad - size.height / 2
-        if centerY - size.height / 2 - pad < fit.minY {
-            centerY = point.y + gap + pad + size.height / 2
-        }
-        let minX = fit.minX + size.width / 2 + pad, maxX = fit.maxX - size.width / 2 - pad
-        let centerX = minX <= maxX ? min(max(point.x, minX), maxX) : point.x
-        let center = CGPoint(x: centerX, y: centerY)
-        let backing = CGRect(x: center.x - size.width / 2 - pad, y: center.y - size.height / 2 - pad / 2,
-                             width: size.width + 2 * pad, height: size.height + pad)
-        ctx.fill(Path(roundedRect: backing, cornerRadius: 3), with: .color(Theme.Colors.plate.opacity(0.75)))
-        ctx.draw(resolved, at: center)
+    private var selectedType: LandmarkType? {
+        if case .point(let t) = mode { return t }
+        return nil
     }
+
 
     /// A violet ring that breathes outward around the point to place next. Static (one ring
     /// at its middle size) when motion is static or Reduce Motion is on.

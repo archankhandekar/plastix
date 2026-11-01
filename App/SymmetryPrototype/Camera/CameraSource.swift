@@ -86,21 +86,31 @@ struct LiveViewfinder: View {
 
 // MARK: - Practice: the virtual patient
 
-/// The practice viewfinder: the virtual patient's render for this set and view, aspect-fill
-/// on Plate, with a slow handheld drift. The drift roll drives the level line in place of the
-/// motion sensors, which the simulator does not have. With `staticMotion` it holds still.
+/// The earlier set's pose in a practice viewfinder: the ground truth of the matching bundled
+/// render (same size and framing as the live render), drawn as thin lines, never as a faded
+/// photo. A faded photo of a different stage reads as a double exposure (two areolae per
+/// side), and the virtual camera cannot be moved to line it up.
+struct VirtualGhost {
+    /// The earlier render's ground truth, in that render's pixels.
+    let truth: LandmarkSet
+}
+
+/// The practice viewfinder: the virtual patient's render for this set and view, fitted on
+/// Plate exactly as the photo will be (the photo check shows the same framing), with a slow
+/// handheld drift. The level line follows the render's own roll plus the drift, in place of
+/// the motion sensors, which the simulator does not have. With `staticMotion` it holds still.
 struct VirtualViewfinder: View {
     let link: ViewfinderLink
     let angle: ViewAngle?
     let maxTiltDegrees: Double
-    let ghost: UIImage?
+    let ghost: VirtualGhost?
     @Binding var practiceRetake: Bool
 
     @StateObject private var source: VirtualCameraSource
     @Environment(\.staticMotion) private var staticMotion
     @State private var start = Date()
 
-    init(patient: DemoPatient, setIndex: Int, angle: ViewAngle?, maxTiltDegrees: Double, ghost: UIImage?,
+    init(patient: DemoPatient, setIndex: Int, angle: ViewAngle?, maxTiltDegrees: Double, ghost: VirtualGhost?,
          practiceRetake: Binding<Bool>, link: ViewfinderLink) {
         self.link = link
         self.angle = angle
@@ -113,33 +123,27 @@ struct VirtualViewfinder: View {
     var body: some View {
         // Qualified: the app has its own TimelineView screen.
         SwiftUI.TimelineView(.animation(minimumInterval: nil, paused: staticMotion)) { context in
-            let drift = VirtualCameraSource.drift(at: context.date.timeIntervalSince(start), staticMotion: staticMotion)
+            let t = context.date.timeIntervalSince(start)
+            let drift = VirtualCameraSource.drift(at: t, staticMotion: staticMotion)
             GeometryReader { geo in
                 ZStack {
                     Theme.Colors.plate
                     if let image = source.previewImage {
+                        // Fitted, not filled: what is framed here is what the photo holds.
                         Image(uiImage: image)
                             .resizable()
-                            .scaledToFill()
+                            .scaledToFit()
                             .frame(width: geo.size.width, height: geo.size.height)
-                            // A little larger than the frame, so the drift never shows an edge.
-                            .scaleEffect(1.05)
                             .rotationEffect(.degrees(-drift.rollDegrees))
                             .offset(drift.offset)
                             .accessibilityLabel(imageLabel)
-                    }
-                    if let ghost {
-                        // The earlier photo stays still while the view drifts, as on a real camera.
-                        Image(uiImage: ghost)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: geo.size.width, height: geo.size.height)
-                            .scaleEffect(1.05)
-                            .opacity(0.35)
-                            .accessibilityHidden(true)
+                        if let ghost {
+                            // The earlier pose stays still while the view drifts, as on a real camera.
+                            GhostOutline(truth: ghost.truth, fit: Self.fitRect(image.size, in: geo.size))
+                        }
                     }
                     if let angle {
-                        GuideOverlayView(angle: angle, rollDegrees: drift.rollDegrees,
+                        GuideOverlayView(angle: angle, rollDegrees: source.tiltDegrees(at: t, staticMotion: staticMotion),
                                          maxTiltDegrees: maxTiltDegrees, ghost: nil)
                     }
                 }
@@ -162,12 +166,20 @@ struct VirtualViewfinder: View {
         "Virtual patient, \((angle ?? source.angle).displayName.lowercased()) view"
     }
 
+    /// Where an image of `imageSize` sits when fitted into `size`.
+    static func fitRect(_ imageSize: CGSize, in size: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return CGRect(origin: .zero, size: size) }
+        let scale = min(size.width / imageSize.width, size.height / imageSize.height)
+        let w = imageSize.width * scale, h = imageSize.height * scale
+        return CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h)
+    }
+
     private func connect() {
         let source = source, start = start, staticMotion = staticMotion
         let retake = $practiceRetake
         if let angle { source.angle = angle }
         link.currentRoll = {
-            VirtualCameraSource.drift(at: Date().timeIntervalSince(start), staticMotion: staticMotion).rollDegrees
+            source.tiltDegrees(at: Date().timeIntervalSince(start), staticMotion: staticMotion)
         }
         link.capture = { angle in
             source.angle = angle
@@ -186,5 +198,43 @@ struct VirtualViewfinder: View {
             link.errorOpensSettings = false
             link.errorMessage = VirtualCameraSource.SourceError.missingPhoto(source.angle.rawValue).errorDescription
         }
+    }
+}
+
+/// The earlier pose as thin Plate-ink lines: both breast outlines, a small ring at each
+/// nipple, and the notch to midline bottom line. Quiet steel, not violet (nobody placed these
+/// here) and not blue (nothing is derived from them).
+struct GhostOutline: View {
+    let truth: LandmarkSet
+    /// Where the render sits in the viewfinder.
+    let fit: CGRect
+
+    var body: some View {
+        Canvas { ctx, _ in
+            let w = truth.imageSize.x, h = truth.imageSize.y
+            guard w > 0, h > 0 else { return }
+            let sx = fit.width / CGFloat(w), sy = fit.height / CGFloat(h)
+            func v(_ p: Point2D) -> CGPoint { CGPoint(x: fit.minX + CGFloat(p.x) * sx, y: fit.minY + CGFloat(p.y) * sy) }
+            var path = Path()
+            for contour in [truth.leftContour, truth.rightContour] where contour.count > 1 {
+                path.move(to: v(contour[0]))
+                for p in contour.dropFirst() { path.addLine(to: v(p)) }
+            }
+            if let n = truth[.sternalNotch], let b = truth[.midlineBottom] {
+                path.move(to: v(n))
+                path.addLine(to: v(b))
+            }
+            for type in [LandmarkType.leftNipple, .rightNipple] {
+                guard let p = truth[type] else { continue }
+                let c = v(p)
+                path.addEllipse(in: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12))
+            }
+            ctx.stroke(path, with: .color(Theme.Colors.plate.opacity(0.35)),
+                       style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+            ctx.stroke(path, with: .color(Theme.Colors.plateInk.opacity(0.6)),
+                       style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
