@@ -4,7 +4,7 @@ import SymmetryModels
 @testable import SymmetryPrototype
 
 /// Pure-logic tests for the new wizard: every state and next action comes from in-memory
-/// fixtures, no files and no images. Ported from SessionProgressTests, plus the
+/// fixtures, no files and no images. Ported from the earlier wizard tests, plus the
 /// see-left-and-right, across-stages, practice, route, SetStatus and tour rules.
 final class SessionWizardTests: XCTestCase {
     private let settings = ReportSettings(landmarkSigmaRatio: FrontalMetricsCalculator.defaultLandmarkSigmaRatio,
