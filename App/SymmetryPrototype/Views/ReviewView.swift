@@ -90,10 +90,16 @@ struct ReviewView: View {
                 .font(.support)
                 .foregroundStyle(Theme.Colors.graduation)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(status.positioningLine(set.positioning) + ".")
+            Text(positioningLine(set: set, status: status))
                 .font(.support)
                 .foregroundStyle(Theme.Colors.graduation)
                 .fixedSize(horizontal: false, vertical: true)
+            if let note = noteLine(set: set) {
+                Text(note)
+                    .font(.support)
+                    .foregroundStyle(Theme.Colors.graduation)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let next = status.nextAction {
                 switch next {
                 case .captureMissing(_, _, let angles, let title, _):
@@ -120,26 +126,30 @@ struct ReviewView: View {
                 .accessibilityAddTraits(.isHeader)
             if let capture = set.captures[angle] {
                 photoLayout {
-                    photo(store.image(for: capture, in: session), angle: angle)
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                        checkLine(for: capture)
-                        if capture.qualityOverridden {
-                            Text("Kept with a warning.")
+                    photo(store.image(for: capture, in: session), capture: capture)
+                    // The status lines and the two actions share the column beside the
+                    // photo: one outlined Mark or Edit, and a quiet Retake.
+                    VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                            checkLine(for: capture)
+                            if capture.qualityOverridden {
+                                Text("Kept with a warning.")
+                                    .font(.body)
+                                    .foregroundStyle(Theme.Colors.graduation)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Text(pointsLine(for: capture))
                                 .font(.body)
-                                .foregroundStyle(Theme.Colors.graduation)
+                                .foregroundStyle(Theme.Colors.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Text(pointsLine(for: capture))
-                            .font(.body)
-                            .foregroundStyle(Theme.Colors.ink)
-                            .fixedSize(horizontal: false, vertical: true)
+                        Button(capture.landmarks == nil ? "Mark points" : "Edit points") { markPoints(capture) }
+                            .buttonStyle(SecondaryButtonStyle())
+                        Button("Retake this photo") { requestRetake(of: capture, set: set, index: index) }
+                            .buttonStyle(QuietButtonStyle(systemImage: "camera"))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Button(capture.landmarks == nil ? "Mark points" : "Edit points") { markPoints(capture) }
-                    .buttonStyle(SecondaryButtonStyle())
-                Button("Retake this photo") { requestRetake(of: capture, set: set, index: index) }
-                    .buttonStyle(SecondaryButtonStyle())
             } else {
                 Text("Not taken: \(angle.displayName.lowercased()).")
                     .font(.body)
@@ -158,14 +168,21 @@ struct ReviewView: View {
             : AnyLayout(HStackLayout(alignment: .top, spacing: Theme.Spacing.m))
     }
 
-    /// The photo as taken, whole, on the Plate with 4pt corners.
-    private func photo(_ image: UIImage?, angle: ViewAngle) -> some View {
-        ZStack {
+    /// The photo as taken, whole, on the Plate with 4pt corners, with the hand-placed points
+    /// drawn on it in violet so their placement can be checked here.
+    private func photo(_ image: UIImage?, capture: Capture) -> some View {
+        let angle = capture.angle
+        return ZStack {
             Theme.Colors.plate
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
+                    .overlay {
+                        PlacedPointsInk(landmarks: capture.landmarks,
+                                        pixelSize: CGSize(width: image.size.width * image.scale,
+                                                          height: image.size.height * image.scale))
+                    }
             } else {
                 Text("Photo file missing.")
                     .font(.support)
@@ -250,6 +267,24 @@ struct ReviewView: View {
 
     // MARK: - Copy
 
+    /// "Table 0°, arms at sides, overhead lights." The free-text note is not a positioning
+    /// value, so it is left out here and shown on its own line by `noteLine`.
+    private func positioningLine(set: CaptureSet, status: SetStatus) -> String {
+        var positioning = set.positioning
+        positioning.note = ""
+        return status.positioningLine(positioning) + "."
+    }
+
+    /// "Note: ..." for a study set's note. The virtual patient's seeded note only repeats
+    /// what the practice band already says, so it is not shown.
+    private func noteLine(set: CaptureSet) -> String? {
+        guard kind != .practice else { return nil }
+        let note = set.positioning.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !note.isEmpty else { return nil }
+        let end = note.hasSuffix(".") ? "" : "."
+        return "Note: " + note + end
+    }
+
     private func heading(for angle: ViewAngle) -> String {
         angle == .frontal ? "Frontal (required for measurements)" : angle.displayName
     }
@@ -317,5 +352,45 @@ struct ReviewView: View {
         guard store.save(s) else { return }
         for capture in set.orderedCaptures { store.deleteImage(for: capture, in: session) }
         navigator.popToSession(ref)
+    }
+}
+
+/// The hand-placed points of one photo, drawn over the photo shown whole (scaled to fit),
+/// in the plate grammar: violet marks whose shape carries the point type. No guides and no
+/// numbers: this is only for checking where the points sit.
+private struct PlacedPointsInk: View {
+    let landmarks: LandmarkSet?
+    /// Size of the displayed image in pixels, used when the landmarks carry no image size.
+    let pixelSize: CGSize
+
+    var body: some View {
+        Canvas { ctx, size in
+            guard let landmarks else { return }
+            let source: CGSize
+            if landmarks.imageSize.x > 0, landmarks.imageSize.y > 0 {
+                source = CGSize(width: landmarks.imageSize.x, height: landmarks.imageSize.y)
+            } else {
+                source = pixelSize
+            }
+            guard source.width > 0, source.height > 0 else { return }
+            // The image is scaled to fit, so one scale for both axes, centred.
+            let scale = min(size.width / source.width, size.height / source.height)
+            let dx = (size.width - source.width * scale) / 2
+            let dy = (size.height - source.height * scale) / 2
+            for type in LandmarkType.allCases {
+                guard let p = landmarks[type] else { continue }
+                let v = CGPoint(x: dx + CGFloat(p.x) * scale, y: dy + CGFloat(p.y) * scale)
+                switch type {
+                case .leftNipple, .rightNipple:
+                    PlateInk.nipple(in: ctx, at: v)
+                case .leftIMF, .rightIMF:
+                    PlateInk.fold(in: ctx, at: v)
+                case .sternalNotch, .midlineBottom:
+                    PlateInk.midlinePoint(in: ctx, at: v)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }

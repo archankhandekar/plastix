@@ -9,23 +9,29 @@ import UIKit
 /// The overlay follows the plate grammar: violet marks are what a hand placed (the shape
 /// carries the point type), blue guides are what the app drew from them. The patient-left
 /// guide is solid and the patient-right guide is dashed. There are no numbers on it.
+///
+/// The thumbnail can be small, so the two side labels sit under the plate in the floor font
+/// (patient right under the screen's left edge) rather than on it, where they would break
+/// mid-word. It carries no practice strip of its own: on session home the pinned practice
+/// band is the one practice label.
 struct SetPlateThumbnail: View {
     let image: UIImage?
     let landmarks: LandmarkSet?
     let setIndex: Int
-    let practice: Bool
     let onOpen: () -> Void
 
-    /// Wide enough for both on-plate side labels; the plate stays centred so its axis sits
-    /// on the screen's centre line.
+    /// The plate stays centred so its axis sits on the screen's centre line.
     private static let maxWidth: CGFloat = 340
 
     var body: some View {
         Button(action: onOpen) {
             Group {
                 if let image {
-                    PlumbPhoto(image: image, landmarks: landmarks, practice: practice) { geometry in
-                        ThumbnailInk(landmarks: landmarks, geometry: geometry)
+                    VStack(spacing: Theme.Spacing.xs) {
+                        PlumbPhoto(image: image, landmarks: landmarks, showsSideLabels: false) { geometry in
+                            ThumbnailInk(landmarks: landmarks, geometry: geometry)
+                        }
+                        sideLabels
                     }
                 } else {
                     notTaken
@@ -44,6 +50,21 @@ struct SetPlateThumbnail: View {
     private var accessibilityText: String {
         let photo = image == nil ? "Set \(setIndex) has no frontal photo yet." : "Frontal photo of set \(setIndex)."
         return photo + " Opens left and right for set \(setIndex)."
+    }
+
+    /// "Patient right" under the screen's left edge, "Patient left" under its right edge.
+    private var sideLabels: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("Patient right")
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: Theme.Spacing.xs)
+            Text("Patient left")
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.support.weight(.semibold))
+        .foregroundStyle(Theme.Colors.ink)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityHidden(true)
     }
 
     private var notTaken: some View {

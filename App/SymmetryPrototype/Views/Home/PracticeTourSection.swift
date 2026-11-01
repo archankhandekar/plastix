@@ -1,45 +1,81 @@
 import SwiftUI
 
-/// The virtual patient's tour on its session home: five tasks, each a 56pt row that opens
-/// the task, ticked from model state and UI flags. A tick says the task was opened or done,
-/// never how well. Below it: what the mannequin is, and a way to start it again.
+/// The virtual patient's tour on its session home, below the left-right result: one 56pt
+/// summary row ("Practice tour: 2 of 5 done" and the next task) that folds open into the
+/// five task rows. Each task row opens the task; ticks come from model state and UI flags
+/// and say the task was opened or done, never how well. The mannequin caption sits inside
+/// the open list. Resetting the virtual patient is not here; it is a quiet action at the
+/// end of the page.
 struct PracticeTourSection: View {
     let tour: PracticeTour
     let onSelect: (PracticeTourTask) -> Void
-    let onReset: () -> Void
 
     static let caption = "The virtual patient is a rendered mannequin. Its midline bottom point is the umbilicus."
 
-    @State private var confirmReset = false
+    @State private var isExpanded = false
+
+    private var doneCount: Int { tour.items.filter(\.isDone).count }
+
+    private var summaryTitle: String {
+        doneCount == tour.items.count
+            ? "Practice tour: all \(tour.items.count) done"
+            : "Practice tour: \(doneCount) of \(tour.items.count) done"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            Text("Practice tour")
-                .font(.sectionTitle)
-                .foregroundStyle(Theme.Colors.ink)
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: 0) {
+            summaryRow
 
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(tour.items) { item in
-                    row(item)
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(tour.items) { item in
+                        row(item)
+                    }
+                    Text(Self.caption)
+                        .font(.support)
+                        .foregroundStyle(Theme.Colors.graduation)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, Theme.Spacing.s)
                 }
+                .padding(.leading, Theme.Spacing.s)
             }
+        }
+    }
 
-            Text(Self.caption)
-                .font(.support)
-                .foregroundStyle(Theme.Colors.graduation)
-                .fixedSize(horizontal: false, vertical: true)
+    private var summaryRow: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) { isExpanded.toggle() }
+        } label: {
+            HStack(alignment: .center, spacing: Theme.Spacing.m) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summaryTitle)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !isExpanded, let next = tour.nextTask {
+                        Text("Next: " + next.title)
+                            .font(.support)
+                            .foregroundStyle(Theme.Colors.graduation)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button("Reset the virtual patient") { confirmReset = true }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, Theme.Spacing.s)
+                Image(systemName: "chevron.down")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.graduation)
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, Theme.Spacing.s)
+            .tapTarget()
         }
-        .confirmationDialog("Start the virtual patient again from the beginning?",
-                            isPresented: $confirmReset, titleVisibility: .visible) {
-            Button("Reset", role: .destructive) { onReset() }
-            Button("Cancel", role: .cancel) {}
-        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(summaryTitle + (tour.nextTask.map { ". Next: " + $0.title } ?? "."))
+        .accessibilityHint(isExpanded ? "Hides the five tasks." : "Shows the five tasks.")
+        .accessibilityAddTraits(.isButton)
     }
 
     private func row(_ item: PracticeTour.Item) -> some View {

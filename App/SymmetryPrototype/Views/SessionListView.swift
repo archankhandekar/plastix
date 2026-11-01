@@ -43,6 +43,7 @@ private struct SessionListContent: View {
     @EnvironmentObject private var stores: SessionStores
     @EnvironmentObject private var navigator: AppNavigator
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showingNewSession = false
     @State private var pendingDelete: StudySession?
@@ -70,6 +71,9 @@ private struct SessionListContent: View {
         }
         .background(Theme.Colors.tray)
         .navigationTitle("Sessions")
+        // Inline like every other screen, so the title never sits on a different inset
+        // from the 20pt content margin.
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Settings") { navigator.push(.settings) }
@@ -126,6 +130,7 @@ private struct SessionListContent: View {
                 Text("No study sessions yet")
                     .font(.sectionTitle)
                     .foregroundStyle(Theme.Colors.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Text("A session is one patient, identified only by a study code. It holds every set of photos you take for that patient.")
                     .font(.body)
                     .foregroundStyle(Theme.Colors.ink)
@@ -134,40 +139,86 @@ private struct SessionListContent: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-                ForEach(study.sessions) { session in
-                    studyRow(session)
+                Text("Study sessions")
+                    .font(.sectionTitle)
+                    .foregroundStyle(Theme.Colors.ink)
+                    .accessibilityAddTraits(.isHeader)
+                VStack(alignment: .leading, spacing: 0) {
+                    hairline
+                    ForEach(study.sessions) { session in
+                        studyRow(session)
+                        hairline
+                    }
                 }
             }
         }
     }
 
+    /// One study session: its code, the one thing to do next and when it started, with a
+    /// trailing chevron. The trailing menu holds Delete (the same as a long press). At
+    /// accessibility text sizes the menu moves under the row so the words keep the width.
     private func studyRow(_ session: StudySession) -> some View {
         let wizard = SessionWizard(session: session, settings: settings.reportSettings, kind: .study)
-        return Button {
-            navigator.push(.session(SessionRef(id: session.id, kind: .study)))
-        } label: {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text(session.studyID)
-                    .font(.sectionTitle)
-                    .foregroundStyle(Theme.Colors.ink)
-                Text(wizard.summaryLine)
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.ink)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Started " + session.createdAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.support)
-                    .foregroundStyle(Theme.Colors.graduation)
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 0))
+        return layout {
+            Button {
+                navigator.push(.session(SessionRef(id: session.id, kind: .study)))
+            } label: {
+                HStack(alignment: .center, spacing: Theme.Spacing.s) {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                        Text(session.studyID)
+                            .font(.sectionTitle)
+                            .foregroundStyle(Theme.Colors.ink)
+                        Text(wizard.summaryLine)
+                            .font(.body)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Started " + session.createdAt.formatted(date: .abbreviated, time: .omitted))
+                            .font(.support)
+                            .foregroundStyle(Theme.Colors.graduation)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.graduation)
+                        .accessibilityHidden(true)
+                }
+                .padding(.vertical, Theme.Spacing.m)
+                .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, Theme.Spacing.s)
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .contextMenu {
+                Button { pendingDelete = session } label: {
+                    Label("Delete this session", systemImage: "trash")
+                }
+            }
+
+            Menu {
+                Button { pendingDelete = session } label: {
+                    Label("Delete this session", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.graduation)
+                    .frame(width: Theme.tapTarget, height: Theme.tapTarget)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("More for \(session.studyID)")
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            Button("Delete", role: .destructive) { pendingDelete = session }
-        }
-        .accessibilityElement(children: .combine)
+    }
+
+    private var hairline: some View {
+        Rectangle()
+            .fill(Theme.Colors.hairline)
+            .frame(height: 1)
+            .accessibilityHidden(true)
     }
 
     // MARK: - Practice
@@ -179,10 +230,14 @@ private struct SessionListContent: View {
                 .foregroundStyle(Theme.Colors.ink)
                 .accessibilityAddTraits(.isHeader)
             if practice.isAvailable {
-                practiceRow
+                VStack(alignment: .leading, spacing: 0) {
+                    hairline
+                    practiceRow
+                    hairline
+                }
                 if practice.session != nil {
                     Button("Reset the virtual patient") { confirmPracticeReset = true }
-                        .buttonStyle(SecondaryButtonStyle())
+                        .buttonStyle(QuietButtonStyle(systemImage: "arrow.counterclockwise"))
                 }
             } else {
                 Text("The virtual patient is not in this build.")
@@ -194,36 +249,42 @@ private struct SessionListContent: View {
         }
     }
 
-    /// A 72pt hatched row. The hatch marks practice data and nothing else; the words sit on a
-    /// Tray backing so they stay legible over it.
+    /// The virtual patient as a row like a study session's: a hatched leading tag (the
+    /// hatch marks practice data and nothing else), the words on the tray, and a chevron.
     private var practiceRow: some View {
         Button(action: openPractice) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text(practice.session == nil ? "Try the virtual patient" : "Open the virtual patient")
-                    .font(.sectionTitle)
-                    .foregroundStyle(Theme.Colors.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Practise the whole app on a 3D mannequin. Nothing is study data.")
-                    .font(.body)
-                    .foregroundStyle(Theme.Colors.ink)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, Theme.Spacing.m)
-            .padding(.vertical, Theme.Spacing.s)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.Colors.tray, in: RoundedRectangle(cornerRadius: Theme.photoRadius))
-            .padding(Theme.Spacing.s)
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            .background {
+            HStack(alignment: .center, spacing: Theme.Spacing.m) {
                 ZStack {
                     Theme.Colors.tray
-                    HatchPattern(spacing: 6)
-                        .stroke(Theme.Colors.graduation.opacity(0.25), lineWidth: 1)
+                    HatchPattern(spacing: 5)
+                        .stroke(Theme.Colors.graduation.opacity(0.6), lineWidth: 1)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+                .frame(width: 12)
+                .frame(maxHeight: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    Text(practice.session == nil ? "Try the virtual patient" : "Open the virtual patient")
+                        .font(.sectionTitle)
+                        .foregroundStyle(Theme.Colors.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Practise the whole app on a 3D mannequin. Nothing is study data.")
+                        .font(.body)
+                        .foregroundStyle(Theme.Colors.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Theme.Colors.graduation)
+                    .accessibilityHidden(true)
             }
-            .contentShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
+            .padding(.vertical, Theme.Spacing.m)
+            .padding(.trailing, Theme.tapTarget)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
@@ -249,15 +310,17 @@ private struct SessionListContent: View {
     }
 }
 
-/// New study session: one field for the study code, with the rule beneath it and a live
-/// counter. On success the caller receives the new session and the sheet dismisses itself.
+/// New study session: one field for the study code, its validation message directly under
+/// it, then the rule and a live counter. The code is checked live once the field has text,
+/// and Create stays dimmed until the code is valid. On success the caller receives the new
+/// session and the sheet dismisses itself.
 struct NewSessionSheet: View {
     @EnvironmentObject private var stores: SessionStores
     @Environment(\.dismiss) private var dismiss
     let onCreated: (StudySession) -> Void
 
     @State private var studyID: String
-    /// Once true, the field's validation message is shown and follows each edit.
+    /// Forces the validation message even for an empty field (the route harness uses it).
     @State private var showsValidation: Bool
     /// A storage failure on create, shown instead of the validation message.
     @State private var storageMessage: String?
@@ -268,8 +331,15 @@ struct NewSessionSheet: View {
         _showsValidation = State(initialValue: showValidation)
     }
 
+    private var isValid: Bool {
+        if case .success = StudyIDCheck.validateNewStudyID(studyID) { return true }
+        return false
+    }
+
+    /// Shown live as soon as the field has text, so a reserved or malformed code is named
+    /// before Create is tapped.
     private var validationMessage: String? {
-        guard showsValidation else { return nil }
+        guard showsValidation || !studyID.isEmpty else { return nil }
         if case .failure(let message) = StudyIDCheck.validateNewStudyID(studyID) { return message }
         return nil
     }
@@ -281,32 +351,35 @@ struct NewSessionSheet: View {
                     Text("Study code")
                         .font(.sectionTitle)
                         .foregroundStyle(Theme.Colors.ink)
-                    TextField("For example S-014", text: $studyID)
-                        .font(.body)
-                        .foregroundStyle(Theme.Colors.ink)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .fieldStyle()
-                        .accessibilityLabel("Study code")
+                        .accessibilityAddTraits(.isHeader)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                        TextField("For example S-014", text: $studyID)
+                            .font(.body)
+                            .foregroundStyle(Theme.Colors.ink)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .fieldStyle()
+                            .accessibilityLabel("Study code")
+                        if let message = storageMessage ?? validationMessage {
+                            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .accessibilityHidden(true)
+                                Text(message)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .font(.body)
+                            .foregroundStyle(Theme.Colors.caution)
+                            .accessibilityElement(children: .combine)
+                        }
+                        Text("\(studyID.count) of \(StudySession.maxStudyIDLength)")
+                            .font(.support)
+                            .foregroundStyle(Theme.Colors.graduation)
+                    }
                     Text("Use the code the study gave this patient. Letters, digits and dashes, up to 16 characters. Never a name, date of birth or record number.")
                         .font(.body)
                         .foregroundStyle(Theme.Colors.ink)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("\(studyID.count) of \(StudySession.maxStudyIDLength)")
-                        .font(.support)
-                        .foregroundStyle(Theme.Colors.graduation)
-                    if let message = storageMessage ?? validationMessage {
-                        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .accessibilityHidden(true)
-                            Text(message)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .font(.body)
-                        .foregroundStyle(Theme.Colors.caution)
-                        .accessibilityElement(children: .combine)
-                    }
                 }
                 .padding(.horizontal, Theme.Spacing.margin)
                 .padding(.vertical, Theme.Spacing.l)
@@ -314,17 +387,15 @@ struct NewSessionSheet: View {
             .background(Theme.Colors.tray)
             .navigationTitle("New study session")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .onChange(of: studyID) { storageMessage = nil }
             .safeAreaInset(edge: .bottom) {
-                VStack(spacing: Theme.Spacing.s) {
-                    Button("Create session and continue") { create() }
-                        .buttonStyle(PrimaryButtonStyle())
-                    Button("Cancel") { dismiss() }
-                        .buttonStyle(SecondaryButtonStyle())
-                }
-                .padding(.horizontal, Theme.Spacing.margin)
-                .padding(.vertical, Theme.Spacing.m)
-                .background(Theme.Colors.tray)
+                Button("Create session and continue") { create() }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!isValid)
+                    .padding(.horizontal, Theme.Spacing.margin)
+                    .padding(.vertical, Theme.Spacing.m)
+                    .background(Theme.Colors.tray)
             }
         }
     }
